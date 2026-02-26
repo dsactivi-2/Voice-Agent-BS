@@ -149,7 +149,10 @@ export class TurnTakingManager extends EventEmitter<TurnTakingEvents> {
   onTranscriptReceived(isFinal: boolean, text: string): void {
     if (this.destroyed) return;
 
-    if (!isFinal) return;
+    if (!isFinal) {
+      logger.debug({ text: text.trim() }, 'TurnTaking: interim transcript');
+      return;
+    }
 
     const trimmed = text.trim();
     if (trimmed.length === 0) return;
@@ -165,6 +168,17 @@ export class TurnTakingManager extends EventEmitter<TurnTakingEvents> {
       // Buffer the transcript until VAD signals speechEnd
       this.pendingFinalTranscript = trimmed;
     }
+  }
+
+  /**
+   * Restarts the silence monitor timers from zero.
+   * Call this after the bot finishes playing a greeting or audio chunk
+   * to give the caller a full silence window to respond.
+   */
+  restartSilenceTimer(): void {
+    if (this.destroyed) return;
+    this.startSilenceMonitor();
+    logger.debug('TurnTaking: silence timer restarted');
   }
 
   /**

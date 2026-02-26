@@ -181,6 +181,7 @@ export class VonageMediaSession extends EventEmitter<VonageMediaStreamEvents> {
           callId: this.callId,
           contentType: this.contentType,
           event: metadata.event,
+          headers: metadata.headers,
           timeToFirstMessageMs,
         },
         'Vonage media stream metadata received',

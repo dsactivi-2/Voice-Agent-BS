@@ -120,6 +120,10 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
   private startTime: number = 0;
   private stopped: boolean = false;
 
+  // ── Audio throughput tracking ────────────────────────────────────
+  private audioBytesSinceLog: number = 0;
+  private audioLastLogAt: number = 0;
+
   // ── Processing guard ─────────────────────────────────────────────
   private isProcessingTurn: boolean = false;
   /** Monotonically increasing counter used to detect stale finally-blocks after barge-in. */
@@ -145,6 +149,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
    */
   async start(): Promise<void> {
     this.startTime = Date.now();
+    this.audioLastLogAt = this.startTime;
 
     logger.info({ callId: this.callId, phoneNumber: this.phoneNumber }, 'Call orchestrator starting');
 
@@ -179,13 +184,27 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       this.bindMediaSessionEvents();
       this.bindTurnTakingEvents();
 
-      // 7. Connect Deepgram ASR
+      // 7. Connect Deepgram ASR — fire-and-forget, don't block start() or greeting
       this.asrClient = new DeepgramASRClient(
         this.agentConfig.deepgramLanguage as DeepgramLanguage,
         config.DEEPGRAM_API_KEY,
       );
-      await this.asrClient.connect();
+      // Non-blocking: greeting plays immediately while DG handshakes in background
+      this.asrClient.connect().catch((error) => {
+        logger.error({ err: error, callId: this.callId }, 'Deepgram ASR failed to connect');
+      });
       this.asrClient.on('transcript', (event) => {
+        if (event.isFinal) {
+          logger.info(
+            { callId: this.callId, text: event.text, confidence: event.confidence },
+            'ASR FINAL transcript',
+          );
+        } else {
+          logger.debug(
+            { callId: this.callId, text: event.text },
+            'ASR interim transcript',
+          );
+        }
         this.turnTakingManager?.onTranscriptReceived(event.isFinal, event.text);
       });
       this.asrClient.on('error', (error) => {
@@ -319,6 +338,8 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       if (cached && this.mediaSession.isOpen()) {
         this.mediaSession.sendAudio(cached);
         logger.info({ callId: this.callId, bytes: cached.byteLength }, 'Greeting sent from cache');
+        // Reset silence timer — give caller full window to respond after greeting
+        this.turnTakingManager?.restartSilenceTimer();
         return;
       }
 
@@ -333,6 +354,8 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       if (this.mediaSession.isOpen()) {
         this.mediaSession.sendAudio(audio);
         logger.info({ callId: this.callId, bytes: audio.byteLength }, 'Greeting synthesized and sent');
+        // Reset silence timer — give caller full window to respond after greeting
+        this.turnTakingManager?.restartSilenceTimer();
       }
     } catch (err) {
       logger.error({ err, callId: this.callId }, 'Failed to send greeting - call continues without it');
@@ -385,6 +408,23 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       // Mark that caller has recent audio activity
       if (this.session) {
         this.session.callerSpokeRecently = true;
+      }
+
+      // Track audio throughput (log every 5s)
+      this.audioBytesSinceLog += buffer.length;
+      const now = Date.now();
+      if (now - this.audioLastLogAt >= 5000) {
+        const intervalSec = (now - this.audioLastLogAt) / 1000;
+        logger.info(
+          {
+            callId: this.callId,
+            bytesPerSec: Math.round(this.audioBytesSinceLog / intervalSec),
+            deepgramConnected: this.asrClient?.isConnected() ?? false,
+          },
+          'Audio throughput check',
+        );
+        this.audioBytesSinceLog = 0;
+        this.audioLastLogAt = now;
       }
     } catch (error) {
       logger.error(

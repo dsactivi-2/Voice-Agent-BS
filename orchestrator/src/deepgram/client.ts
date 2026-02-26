@@ -140,7 +140,7 @@ export class DeepgramASRClient extends EventEmitter<DeepgramASRClientEvents> {
    */
   sendAudio(chunk: Buffer): void {
     if (!this.liveClient || !this.connected) {
-      logger.warn('Deepgram: attempted to send audio when not connected');
+      logger.debug('Deepgram: audio dropped — not yet connected');
       return;
     }
     // Deepgram SDK expects ArrayBuffer, not Node.js Buffer
