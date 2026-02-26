@@ -138,13 +138,14 @@ export function createAnswerHandler(baseUrl: string): RouteHandlerMethod {
 }
 
 // ---------------------------------------------------------------------------
-// Event URL handler factory (POST /vonage/events)
+// Event URL handler factory (GET+POST /vonage/events)
 // ---------------------------------------------------------------------------
 
 /**
  * Creates a Fastify route handler for the Vonage Event URL.
- * Vonage POSTs call status events (started, ringing, answered, completed, etc.)
- * to this endpoint throughout the call lifecycle.
+ * Vonage sends call status events (started, ringing, answered, completed, etc.)
+ * to this endpoint throughout the call lifecycle — either as GET (query params)
+ * or POST (JSON body).
  *
  * @param callbacks - Optional callbacks for specific event types
  * @returns A Fastify route handler
@@ -155,7 +156,11 @@ export function createEventHandler(callbacks?: VonageWebhookCallbacks): RouteHan
     reply: FastifyReply,
   ): Promise<void> {
     // --- Body validation ---
-    const parseResult = vonageEventPayloadSchema.safeParse(request.body);
+    // Vonage sends call events as GET (query params) or POST (JSON body)
+    const rawPayload = (request.method === 'GET')
+      ? request.query
+      : request.body;
+    const parseResult = vonageEventPayloadSchema.safeParse(rawPayload);
 
     if (!parseResult.success) {
       logger.warn(

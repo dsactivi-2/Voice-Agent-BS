@@ -93,6 +93,8 @@ export async function getLLMResponseWithFallback(
     { role: 'user', content: transcript },
   ];
 
+  const startMs = Date.now();
+
   try {
     const generator = streamLLMResponse({
       model,
@@ -105,10 +107,14 @@ export async function getLLMResponseWithFallback(
       result = await generator.next();
     }
 
+    logger.info(
+      { callId: session.callId, model, latencyMs: Date.now() - startMs },
+      'LLM response received',
+    );
     return result.value;
   } catch (error) {
     logger.warn(
-      { callId: session.callId, error, model },
+      { callId: session.callId, err: error, model, latencyMs: Date.now() - startMs },
       'LLM request failed, returning fallback response',
     );
     return buildFallbackResponse(session.language);

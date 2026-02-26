@@ -122,10 +122,16 @@ export async function createServer(deps: ServerDependencies) {
 
       activeOrchestrators.set(callId, orchestrator);
 
-      orchestrator.start().catch((err: Error) => {
-        logger.error({ err, callId }, 'CallOrchestrator failed to start');
-        activeOrchestrators.delete(callId);
-      });
+      const orchestratorStartMs = Date.now();
+
+      orchestrator.start()
+        .then(() => {
+          logger.info({ callId, latencyMs: Date.now() - orchestratorStartMs }, 'CallOrchestrator started successfully');
+        })
+        .catch((err: Error) => {
+          logger.error({ err, callId, latencyMs: Date.now() - orchestratorStartMs }, 'CallOrchestrator failed to start');
+          activeOrchestrators.delete(callId);
+        });
     },
 
     onCallEnded: (callId, reason) => {
