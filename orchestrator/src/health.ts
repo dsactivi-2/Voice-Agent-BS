@@ -54,20 +54,24 @@ export function registerHealthRoute(
     // External service checks — only test reachability, not full connection
     const [deepgram, azureTts, openai] = await Promise.all([
       checkService('deepgram', async () => {
-        // Lightweight check — just verify API is reachable
+        // Use GET — HEAD returns 405 on Deepgram's API
         const res = await fetch('https://api.deepgram.com/v1/projects', {
-          method: 'HEAD',
+          method: 'GET',
           signal: AbortSignal.timeout(3000),
         }).catch(() => ({ ok: false }));
-        if (!res.ok) throw new Error('Deepgram unreachable');
+        // 401 means reachable but unauthorized — fine for health check
+        if (!res.ok && 'status' in res && (res as Response).status !== 401) {
+          throw new Error('Deepgram unreachable');
+        }
       }, 3000),
       checkService('azure_tts', async () => {
         const region = process.env['AZURE_REGION'] ?? 'westeurope';
+        // Use voices/list endpoint — HEAD on issueToken returns 404
         const res = await fetch(
-          `https://${region}.api.cognitive.microsoft.com/sts/v1.0/issueToken`,
-          { method: 'HEAD', signal: AbortSignal.timeout(3000) }
+          `https://${region}.tts.speech.microsoft.com/cognitiveservices/voices/list`,
+          { method: 'GET', signal: AbortSignal.timeout(3000) }
         ).catch(() => ({ ok: false }));
-        // 401 means reachable but unauthorized — that's fine for health check
+        // 401 means reachable but unauthorized — fine for health check
         if (!res.ok && 'status' in res && (res as Response).status !== 401) {
           throw new Error('Azure TTS unreachable');
         }

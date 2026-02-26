@@ -24,11 +24,13 @@ export class DeepgramConnectionPool {
   private readonly available: PoolEntry[] = [];
   private readonly inUse: Map<DeepgramASRClient, DeepgramLanguage> = new Map();
   private statsTimerId: ReturnType<typeof setInterval> | null = null;
+  private readonly maxTotal: number;
   private closed = false;
 
-  constructor(poolSize: number = 5, apiKey: string) {
+  constructor(poolSize: number = 5, apiKey: string, maxTotal: number = 20) {
     this.poolSize = poolSize;
     this.apiKey = apiKey;
+    this.maxTotal = maxTotal;
 
     // Log pool stats every 30 seconds
     this.statsTimerId = setInterval(() => {
@@ -36,7 +38,7 @@ export class DeepgramConnectionPool {
     }, 30_000);
     this.statsTimerId.unref();
 
-    logger.info({ poolSize }, 'DeepgramConnectionPool created');
+    logger.info({ poolSize, maxTotal }, 'DeepgramConnectionPool created');
   }
 
   /**
@@ -71,6 +73,15 @@ export class DeepgramConnectionPool {
 
       // Connection was stale, discard and create a new one
       logger.debug({ language }, 'DeepgramPool: discarding stale connection');
+    }
+
+    // Guard: enforce max total connection limit
+    if (this.inUse.size >= this.maxTotal) {
+      logger.error(
+        { inUse: this.inUse.size, maxTotal: this.maxTotal },
+        'DeepgramPool: max total connections reached',
+      );
+      throw new Error(`DeepgramConnectionPool: max total connections (${this.maxTotal}) reached`);
     }
 
     // No suitable connection found or pool empty -- create a new one
@@ -190,6 +201,7 @@ export class DeepgramConnectionPool {
         inUse: this.inUse.size,
         total: this.totalCount,
         poolSize: this.poolSize,
+        maxTotal: this.maxTotal,
       },
       'DeepgramConnectionPool stats',
     );

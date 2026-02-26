@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import fastifyWebsocket from '@fastify/websocket';
+import fastifyRateLimit from '@fastify/rate-limit';
 import { pinoHttp } from 'pino-http';
 import { logger } from './utils/logger.js';
 import { config } from './config.js';
@@ -7,6 +8,9 @@ import { registerHealthRoute } from './health.js';
 import { setupGracefulShutdown } from './graceful-shutdown.js';
 import { createTelephonyProvider } from './telephony/factory.js';
 import type { TelephonyEvents } from './telephony/provider.js';
+import type { FastifyRequest } from 'fastify';
+import { CallOrchestrator } from './call-orchestrator.js';
+import { routeVonageCall } from './agents/language-router.js';
 
 // These will be injected when DB and Redis are initialized
 import type { Pool } from 'pg';
@@ -19,6 +23,9 @@ interface ServerDependencies {
 
 // Track active calls globally
 let activeCalls = 0;
+
+/** Active CallOrchestrator instances keyed by callId. */
+const activeOrchestrators = new Map<string, CallOrchestrator>();
 
 export function getActiveCalls(): number {
   return activeCalls;
@@ -45,6 +52,26 @@ export async function createServer(deps: ServerDependencies) {
     options: {
       maxPayload: 65536, // 64KB per WebSocket frame
     },
+  });
+
+  // Rate limiting — protect webhook endpoints from flooding
+  // Vonage sends webhooks from known infrastructure; 200 req/min per IP is generous
+  await app.register(fastifyRateLimit, {
+    global: true,
+    max: 200,
+    timeWindow: '1 minute',
+    keyGenerator: (req: FastifyRequest): string => req.ip ?? 'unknown',
+    // Skip health checks and WebSocket upgrades
+    allowList: (req: FastifyRequest): boolean =>
+      req.url === '/health' || req.headers['upgrade'] === 'websocket',
+    errorResponseBuilder: (
+      _req: FastifyRequest,
+      context: { after: string; max: number },
+    ) => ({
+      statusCode: 429,
+      error: 'Too Many Requests',
+      message: `Rate limit exceeded. Try again in ${context.after}.`,
+    }),
   });
 
   // HTTP request logging via Pino
@@ -78,14 +105,61 @@ export async function createServer(deps: ServerDependencies) {
     onCallStarted: (callId, phoneNumber, fromNumber) => {
       logger.info({ callId, phoneNumber, fromNumber }, 'Telephony call started');
     },
+
+    onMediaSessionReady: (callId, session, meta) => {
+      logger.info({ callId, phoneNumber: meta.phoneNumber, fromNumber: meta.fromNumber }, 'Media session ready — creating CallOrchestrator');
+
+      // Determine agent config based on the called Vonage number
+      const agentConfig = routeVonageCall(meta.fromNumber);
+
+      const orchestrator = new CallOrchestrator({
+        callId,
+        phoneNumber: meta.phoneNumber,
+        agentConfig,
+        campaignId: 'default',
+        mediaSession: session as unknown as import('./telephony/provider.js').MediaSession,
+      });
+
+      activeOrchestrators.set(callId, orchestrator);
+
+      const orchestratorStartMs = Date.now();
+
+      orchestrator.start()
+        .then(() => {
+          logger.info({ callId, latencyMs: Date.now() - orchestratorStartMs }, 'CallOrchestrator started successfully');
+        })
+        .catch((err: Error) => {
+          logger.error({ err, callId, latencyMs: Date.now() - orchestratorStartMs }, 'CallOrchestrator failed to start');
+          activeOrchestrators.delete(callId);
+        });
+    },
+
     onCallEnded: (callId, reason) => {
       logger.info({ callId, reason }, 'Telephony call ended');
+      const orchestrator = activeOrchestrators.get(callId);
+      if (orchestrator) {
+        activeOrchestrators.delete(callId);
+        orchestrator.stop('success').catch((err: Error) => {
+          logger.error({ err, callId }, 'Error stopping orchestrator on call end');
+        });
+      }
     },
+
     onAudioReceived: (callId, audio) => {
-      logger.debug({ callId, audioBytes: audio.length }, 'Audio received from telephony');
+      // Audio is now handled directly by CallOrchestrator via session event binding.
+      // This callback is a no-op but kept for interface compliance.
+      logger.debug({ callId, audioBytes: audio.length }, 'Audio received (handled by orchestrator)');
     },
+
     onError: (callId, error) => {
       logger.error({ callId, err: error }, 'Telephony error');
+      const orchestrator = activeOrchestrators.get(callId);
+      if (orchestrator) {
+        activeOrchestrators.delete(callId);
+        orchestrator.stop('error').catch((err: Error) => {
+          logger.error({ err, callId }, 'Error stopping orchestrator on telephony error');
+        });
+      }
     },
   };
 

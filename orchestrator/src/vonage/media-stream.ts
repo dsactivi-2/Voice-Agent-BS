@@ -46,6 +46,7 @@ export class VonageMediaSession extends EventEmitter<VonageMediaStreamEvents> {
   private metadataReceived = false;
   private readonly ws: WebSocket;
   private closed = false;
+  private readonly connectedAt = Date.now();
 
   constructor(ws: WebSocket, initialCallId?: string) {
     super();
@@ -121,11 +122,13 @@ export class VonageMediaSession extends EventEmitter<VonageMediaStreamEvents> {
 
     this.ws.on('close', (code: number, reason: Buffer) => {
       this.closed = true;
+      const sessionDurationMs = Date.now() - this.connectedAt;
       logger.info(
         {
           callId: this.callId,
           code,
           reason: reason.toString('utf-8'),
+          sessionDurationMs,
         },
         'Vonage media WebSocket closed',
       );
@@ -172,11 +175,13 @@ export class VonageMediaSession extends EventEmitter<VonageMediaStreamEvents> {
         this.contentType = metadata['content-type'];
       }
 
+      const timeToFirstMessageMs = Date.now() - this.connectedAt;
       logger.info(
         {
           callId: this.callId,
           contentType: this.contentType,
           event: metadata.event,
+          timeToFirstMessageMs,
         },
         'Vonage media stream metadata received',
       );

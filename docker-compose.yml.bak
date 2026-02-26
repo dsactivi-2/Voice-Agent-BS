@@ -41,8 +41,6 @@ services:
         max-size: "50m"
         max-file: "5"
     stop_grace_period: 30s
-    volumes:
-      - /opt/voice-system/vonage-private.key:/opt/voice-system/vonage-private.key:ro
     networks:
       - internal
 

@@ -39,6 +39,9 @@ export class VonageProvider implements TelephonyProvider {
   /** Map of active call sessions by Vonage UUID. */
   private readonly activeSessions = new Map<string, VonageMediaSession>();
 
+  /** Phone number metadata for calls awaiting their media WebSocket. */
+  private readonly pendingCallMeta = new Map<string, { phoneNumber: string; fromNumber: string }>();
+
   /** Event callbacks for the orchestrator. */
   private readonly events: TelephonyEvents;
 
@@ -56,7 +59,7 @@ export class VonageProvider implements TelephonyProvider {
     // GET /vonage/answer — Returns NCCO to connect call audio to WebSocket
     app.get('/vonage/answer', createAnswerHandler(baseUrl));
 
-    // POST /vonage/events — Receives call lifecycle events
+    // GET+POST /vonage/events — Receives call lifecycle events
     const callbacks: VonageWebhookCallbacks = {
       onCallStarted: async (uuid, from, to) => {
         await this.handleCallStarted(uuid, from, to);
@@ -72,7 +75,9 @@ export class VonageProvider implements TelephonyProvider {
       },
     };
 
-    app.post('/vonage/events', createEventHandler(callbacks));
+    const eventHandler = createEventHandler(callbacks);
+    app.get('/vonage/events', eventHandler);
+    app.post('/vonage/events', eventHandler);
 
     // WebSocket /vonage/media — Real-time audio streaming
     app.get('/vonage/media', { websocket: true }, (socket, _req) => {
@@ -138,6 +143,9 @@ export class VonageProvider implements TelephonyProvider {
   // -------------------------------------------------------------------------
 
   private async handleCallStarted(uuid: string, from: string, to: string): Promise<void> {
+    // Store caller/called mapping for use when media WebSocket connects
+    this.pendingCallMeta.set(uuid, { phoneNumber: from, fromNumber: to });
+
     logger.info(
       { uuid, from, to },
       'Vonage call started',
@@ -195,6 +203,8 @@ export class VonageProvider implements TelephonyProvider {
       this.activeSessions.delete(uuid);
     }
 
+    this.pendingCallMeta.delete(uuid);
+
     decrementActiveCalls();
 
     // Update call record
@@ -227,20 +237,23 @@ export class VonageProvider implements TelephonyProvider {
 
   private handleMediaWebSocket(socket: import('ws').WebSocket): void {
     logger.info('Vonage media WebSocket connected');
+    const wsConnectedAt = Date.now();
 
     const session = new VonageMediaSession(socket);
 
     session.on('start', (info) => {
       const { callId } = info;
-      logger.info({ callId }, 'Vonage media session started');
+      logger.info({ callId, timeToMediaReadyMs: Date.now() - wsConnectedAt }, 'Vonage media session started — firing onMediaSessionReady');
       this.activeSessions.set(callId, session);
-      incrementActiveCalls();
-    });
 
-    session.on('audio', (buffer) => {
-      const callId = session.getCallId();
-      if (callId) {
-        this.events.onAudioReceived(callId, buffer);
+      // Fire onMediaSessionReady so server.ts can create the CallOrchestrator
+      const meta = this.pendingCallMeta.get(callId) ?? { phoneNumber: 'unknown', fromNumber: 'unknown' };
+      if (this.events.onMediaSessionReady) {
+        this.events.onMediaSessionReady(
+          callId,
+          session as unknown as import('../telephony/provider.js').MediaSession,
+          meta,
+        );
       }
     });
 
