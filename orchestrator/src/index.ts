@@ -1,15 +1,27 @@
 import { logger } from './utils/logger.js';
 
 logger.info('Voice System Orchestrator starting...');
-logger.info('This is a placeholder entry point. Server setup follows in AP-04.');
 
-// Placeholder — will be replaced by Fastify server in AP-04
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM received, shutting down');
-  process.exit(0);
-});
+// Dynamic imports to allow config validation to fail first
+async function main(): Promise<void> {
+  // Config validation happens on import
+  const { config } = await import('./config.js');
+  logger.info({ env: config.NODE_ENV, port: config.PORT }, 'Config loaded');
 
-process.on('SIGINT', () => {
-  logger.info('SIGINT received, shutting down');
-  process.exit(0);
+  // Initialize DB pool
+  const { pool } = await import('./db/client.js');
+  logger.info('Database pool initialized');
+
+  // Initialize Redis
+  const { redis } = await import('./cache/redis-client.js');
+  logger.info('Redis connected');
+
+  // Start server
+  const { startServer } = await import('./server.js');
+  await startServer({ dbPool: pool, redis });
+}
+
+main().catch((error: unknown) => {
+  logger.fatal({ error }, 'Failed to start application');
+  process.exit(1);
 });
