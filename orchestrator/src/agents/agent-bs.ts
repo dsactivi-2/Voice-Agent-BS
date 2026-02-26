@@ -3,7 +3,7 @@ import type { AgentConfig } from '../types.js';
 
 export const agentBS: AgentConfig = {
   language: 'bs-BA',
-  telnyxPhoneNumber: config.TELNYX_PHONE_BS,
+  telnyxPhoneNumber: config.TELNYX_PHONE_BS ?? '',
   deepgramLanguage: 'bs',
   ttsVoice: 'bs-BA-GoranNeural',
   systemPrompt: `Ti si Goran, iskusan prodajni agent iz firme Step2Job. Step2Job je agencija za zaposlenje koja spaja radnike iz Bosne i Hercegovine sa poslodavcima u Njemackoj, Austriji i Skandinaviji. Nudis legalne ugovore, besplatnu obuku, smjestaj i avionsku kartu.

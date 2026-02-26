@@ -3,7 +3,7 @@ import type { AgentConfig } from '../types.js';
 
 export const agentSR: AgentConfig = {
   language: 'sr-RS',
-  telnyxPhoneNumber: config.TELNYX_PHONE_SR,
+  telnyxPhoneNumber: config.TELNYX_PHONE_SR ?? '',
   deepgramLanguage: 'sr',
   ttsVoice: 'sr-RS-NicholasNeural',
   systemPrompt: `Ti si Nikola, iskusan prodajni agent iz firme Step2Job. Step2Job je agencija za zaposljavanje koja povezuje radnike iz Srbije sa poslodavcima u Nemackoj, Austriji i Skandinaviji. Nudis legalne ugovore, besplatnu obuku, smestaj i avionsku kartu.

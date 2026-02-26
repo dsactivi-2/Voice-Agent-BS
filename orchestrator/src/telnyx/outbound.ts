@@ -12,7 +12,7 @@ import type { Language, CallMemory } from '../types.js';
 // Telnyx SDK client
 // ---------------------------------------------------------------------------
 
-const telnyx = new Telnyx(config.TELNYX_API_KEY);
+const telnyx = new Telnyx(config.TELNYX_API_KEY ?? '');
 
 // ---------------------------------------------------------------------------
 // Input validation schemas
@@ -91,8 +91,8 @@ export async function initiateOutboundCall(
   // Resolve the agent configuration for the chosen language
   const agentConfig =
     language === 'bs-BA'
-      ? routeByPhoneNumber(config.TELNYX_PHONE_BS)
-      : routeByPhoneNumber(config.TELNYX_PHONE_SR);
+      ? routeByPhoneNumber(config.TELNYX_PHONE_BS ?? '')
+      : routeByPhoneNumber(config.TELNYX_PHONE_SR ?? '');
 
   const fromNumber = agentConfig.telnyxPhoneNumber;
 
@@ -154,7 +154,7 @@ export async function initiateOutboundCall(
   const callResponse = await withRetry(
     async () => {
       const response = await telnyx.calls.create({
-        connection_id: config.TELNYX_APP_ID,
+        connection_id: config.TELNYX_APP_ID ?? '',
         to: phoneNumber,
         from: fromNumber,
         answering_machine_detection: 'detect',

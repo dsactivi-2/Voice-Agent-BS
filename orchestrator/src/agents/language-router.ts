@@ -18,8 +18,8 @@ function normaliseNumber(phone: string): string {
  */
 function buildRoutingTable(): Map<string, AgentConfig> {
   const table = new Map<string, AgentConfig>();
-  table.set(normaliseNumber(config.TELNYX_PHONE_BS), agentBS);
-  table.set(normaliseNumber(config.TELNYX_PHONE_SR), agentSR);
+  table.set(normaliseNumber(config.TELNYX_PHONE_BS ?? ''), agentBS);
+  table.set(normaliseNumber(config.TELNYX_PHONE_SR ?? ''), agentSR);
   return table;
 }
 

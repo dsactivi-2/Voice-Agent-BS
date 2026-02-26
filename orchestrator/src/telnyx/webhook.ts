@@ -266,7 +266,7 @@ export function createWebhookHandler(): RouteHandlerMethod {
       rawBody,
       signature,
       timestamp,
-      config.TELNYX_PUBLIC_KEY,
+      config.TELNYX_PUBLIC_KEY ?? '',
     );
 
     if (!isValid) {

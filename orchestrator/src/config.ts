@@ -2,12 +2,22 @@ import { z } from 'zod/v4';
 import 'dotenv/config';
 
 const envSchema = z.object({
-  // Telnyx
-  TELNYX_API_KEY: z.string().min(1),
-  TELNYX_PUBLIC_KEY: z.string().min(1),
-  TELNYX_APP_ID: z.string().min(1),
-  TELNYX_PHONE_BS: z.string().min(1),
-  TELNYX_PHONE_SR: z.string().min(1),
+  // Telephony Provider
+  TELEPHONY_PROVIDER: z.enum(['telnyx', 'vonage']).default('telnyx'),
+
+  // Telnyx (optional — required when TELEPHONY_PROVIDER=telnyx)
+  TELNYX_API_KEY: z.string().optional(),
+  TELNYX_PUBLIC_KEY: z.string().optional(),
+  TELNYX_APP_ID: z.string().optional(),
+  TELNYX_PHONE_BS: z.string().optional(),
+  TELNYX_PHONE_SR: z.string().optional(),
+
+  // Vonage (optional — required when TELEPHONY_PROVIDER=vonage)
+  VONAGE_API_KEY: z.string().optional(),
+  VONAGE_API_SECRET: z.string().optional(),
+  VONAGE_APPLICATION_ID: z.string().optional(),
+  VONAGE_PRIVATE_KEY_PATH: z.string().optional(),
+  VONAGE_PHONE_NUMBER: z.string().optional(),
 
   // Deepgram
   DEEPGRAM_API_KEY: z.string().min(1),
@@ -71,7 +81,43 @@ const envSchema = z.object({
   // A/B Testing
   AB_TEST_ENABLED: z.coerce.boolean().default(false),
   AB_TEST_GROUPS: z.string().default('mini_only,mini_to_full,full_only'),
-});
+}).refine(
+  (data) => {
+    if (data.TELEPHONY_PROVIDER === 'telnyx') {
+      return (
+        !!data.TELNYX_API_KEY &&
+        !!data.TELNYX_PUBLIC_KEY &&
+        !!data.TELNYX_APP_ID &&
+        !!data.TELNYX_PHONE_BS &&
+        !!data.TELNYX_PHONE_SR
+      );
+    }
+    return true;
+  },
+  {
+    message:
+      'When TELEPHONY_PROVIDER=telnyx, all TELNYX_* environment variables are required: ' +
+      'TELNYX_API_KEY, TELNYX_PUBLIC_KEY, TELNYX_APP_ID, TELNYX_PHONE_BS, TELNYX_PHONE_SR',
+  },
+).refine(
+  (data) => {
+    if (data.TELEPHONY_PROVIDER === 'vonage') {
+      return (
+        !!data.VONAGE_API_KEY &&
+        !!data.VONAGE_API_SECRET &&
+        !!data.VONAGE_APPLICATION_ID &&
+        !!data.VONAGE_PRIVATE_KEY_PATH &&
+        !!data.VONAGE_PHONE_NUMBER
+      );
+    }
+    return true;
+  },
+  {
+    message:
+      'When TELEPHONY_PROVIDER=vonage, all VONAGE_* environment variables are required: ' +
+      'VONAGE_API_KEY, VONAGE_API_SECRET, VONAGE_APPLICATION_ID, VONAGE_PRIVATE_KEY_PATH, VONAGE_PHONE_NUMBER',
+  },
+);
 
 function loadConfig() {
   const result = envSchema.safeParse(process.env);

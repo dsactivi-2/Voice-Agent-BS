@@ -5,6 +5,8 @@ import { logger } from './utils/logger.js';
 import { config } from './config.js';
 import { registerHealthRoute } from './health.js';
 import { setupGracefulShutdown } from './graceful-shutdown.js';
+import { createTelephonyProvider } from './telephony/factory.js';
+import type { TelephonyEvents } from './telephony/provider.js';
 
 // These will be injected when DB and Redis are initialized
 import type { Pool } from 'pg';
@@ -38,7 +40,7 @@ export async function createServer(deps: ServerDependencies) {
     bodyLimit: 1048576, // 1MB
   });
 
-  // WebSocket support for Telnyx media streaming
+  // WebSocket support for telephony media streaming
   await app.register(fastifyWebsocket, {
     options: {
       maxPayload: 65536, // 64KB per WebSocket frame
@@ -69,27 +71,31 @@ export async function createServer(deps: ServerDependencies) {
     await reply.status(200).send('# Prometheus metrics will be added in AP-16\n');
   });
 
-  // Telnyx webhook endpoint (placeholder — AP-07 will implement)
-  app.post('/telnyx/webhook', async (req, reply) => {
-    logger.debug({ body: req.body }, 'Telnyx webhook received');
-    await reply.status(200).send({ status: 'ok' });
-  });
+  // --- Telephony provider ---
+  // Creates the configured telephony provider (telnyx or vonage) and
+  // registers its routes (webhooks, WebSocket media, etc.) on the app.
+  const telephonyEvents: TelephonyEvents = {
+    onCallStarted: (callId, phoneNumber, fromNumber) => {
+      logger.info({ callId, phoneNumber, fromNumber }, 'Telephony call started');
+    },
+    onCallEnded: (callId, reason) => {
+      logger.info({ callId, reason }, 'Telephony call ended');
+    },
+    onAudioReceived: (callId, audio) => {
+      logger.debug({ callId, audioBytes: audio.length }, 'Audio received from telephony');
+    },
+    onError: (callId, error) => {
+      logger.error({ callId, err: error }, 'Telephony error');
+    },
+  };
 
-  // Telnyx media WebSocket (placeholder — AP-07 will implement)
-  app.get('/telnyx/media', { websocket: true }, (socket, _req) => {
-    logger.info('Telnyx media WebSocket connected');
-    incrementActiveCalls();
+  const telephonyProvider = createTelephonyProvider(telephonyEvents);
+  telephonyProvider.registerRoutes(app);
 
-    socket.on('close', () => {
-      decrementActiveCalls();
-      logger.info('Telnyx media WebSocket disconnected');
-    });
-
-    socket.on('error', (error: Error) => {
-      logger.error({ error }, 'WebSocket error');
-      decrementActiveCalls();
-    });
-  });
+  logger.info(
+    { provider: telephonyProvider.name },
+    'Telephony provider registered',
+  );
 
   // Outbound call API (placeholder — AP-07 will implement)
   app.post('/api/calls/outbound', async (_req, reply) => {
