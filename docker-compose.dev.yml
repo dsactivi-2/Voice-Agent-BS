@@ -1,0 +1,44 @@
+# Development overrides — use with:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# This file extends the base compose file for local development:
+#   - Orchestrator runs in dev mode with hot-reload via tsx watch
+#   - Source code is volume-mounted so changes reflect immediately
+#   - PostgreSQL and Redis ports are exposed on all interfaces for local tooling
+
+services:
+
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+      target: dev
+    volumes:
+      - ./orchestrator:/app
+      # Preserve the container's node_modules to avoid host/container conflicts
+      - /app/node_modules
+    command: npx tsx watch src/index.ts
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      LOG_LEVEL: debug
+    # Remove resource limits for development flexibility
+    deploy:
+      resources:
+        limits:
+          cpus: "8"
+          memory: 8G
+
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  # Caddy is typically not needed locally; disable it to avoid port conflicts
+  caddy:
+    profiles:
+      - caddy

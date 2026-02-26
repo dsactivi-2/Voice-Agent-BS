@@ -1,0 +1,40 @@
+voice.activi.io {
+    # Telnyx webhook endpoint — standard HTTP, no special streaming needed
+    handle /telnyx/webhook {
+        reverse_proxy orchestrator:3000
+    }
+
+    # Telnyx media streaming — long-lived connections, disable buffering
+    handle /telnyx/media {
+        reverse_proxy orchestrator:3000 {
+            flush_interval -1
+            transport http {
+                read_timeout  300s
+                write_timeout 300s
+            }
+        }
+    }
+
+    # Health check — used by load balancers and uptime monitors
+    handle /health {
+        reverse_proxy orchestrator:3000
+    }
+
+    # Block metrics endpoint from public access
+    handle /metrics {
+        respond 403
+    }
+
+    # Catch-all — reject unknown paths
+    handle {
+        respond 404
+    }
+
+    # Structured access logging with rotation
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 50mb
+            roll_keep 5
+        }
+    }
+}
