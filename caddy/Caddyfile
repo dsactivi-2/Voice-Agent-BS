@@ -20,6 +20,16 @@ voice.activi.io {
         }
     }
 
+    # API endpoints (outbound calls, batch)
+    handle /api/calls/* {
+        reverse_proxy orchestrator:3000
+    }
+
+    # Telnyx webhook + media (for when Telnyx is active)
+    handle /telnyx/* {
+        reverse_proxy orchestrator:3000
+    }
+
     # Health check
     handle /health {
         reverse_proxy orchestrator:3000
