@@ -7,20 +7,17 @@ FROM node:22-alpine AS base
 
 WORKDIR /app
 
-# Install OS-level dependencies needed at runtime (e.g. for native modules)
-RUN apk add --no-cache \
-    dumb-init \
-    curl
+RUN apk add --no-cache dumb-init curl && \
+    corepack enable && corepack prepare pnpm@latest --activate
 
-# Copy package manifests first to leverage layer caching
-COPY package.json package-lock.json* ./
+COPY package.json pnpm-lock.yaml ./
 
 # ============================================================
 # Stage 2: deps — install ALL dependencies (dev + prod)
 # ============================================================
 FROM base AS deps
 
-RUN npm ci --frozen-lockfile
+RUN pnpm install --frozen-lockfile
 
 # ============================================================
 # Stage 3: dev — development image with hot-reload
@@ -29,10 +26,6 @@ FROM deps AS dev
 
 ENV NODE_ENV=development
 
-# Install nodemon globally for watch mode fallback
-RUN npm install -g nodemon tsx
-
-# Copy source (will be overridden by volume mount in dev compose)
 COPY . .
 
 EXPOSE 3000
@@ -52,7 +45,7 @@ ENV NODE_ENV=production
 
 COPY . .
 
-RUN npm run build
+RUN npx tsc
 
 # ============================================================
 # Stage 5: production — lean runtime image
@@ -62,19 +55,14 @@ FROM base AS production
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Install only production dependencies
-RUN npm ci --frozen-lockfile --omit=dev && \
-    npm cache clean --force
+RUN pnpm install --frozen-lockfile --prod && \
+    pnpm store prune
 
-# Copy compiled output from builder
 COPY --from=builder /app/dist ./dist
 
-# Create non-root user for security
 RUN addgroup -g 1001 -S appgroup && \
-    adduser -u 1001 -S appuser -G appgroup
-
-# Adjust ownership
-RUN chown -R appuser:appgroup /app
+    adduser -u 1001 -S appuser -G appgroup && \
+    chown -R appuser:appgroup /app
 
 USER appuser
 
