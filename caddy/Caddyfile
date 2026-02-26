@@ -1,11 +1,16 @@
 voice.activi.io {
-    # Telnyx webhook endpoint — standard HTTP, no special streaming needed
-    handle /telnyx/webhook {
+    # Vonage answer URL — returns NCCO, standard HTTP
+    handle /vonage/answer {
         reverse_proxy orchestrator:3000
     }
 
-    # Telnyx media streaming — long-lived connections, disable buffering
-    handle /telnyx/media {
+    # Vonage event URL — call lifecycle events, standard HTTP
+    handle /vonage/events {
+        reverse_proxy orchestrator:3000
+    }
+
+    # Vonage media streaming — long-lived WebSocket, disable buffering
+    handle /vonage/media {
         reverse_proxy orchestrator:3000 {
             flush_interval -1
             transport http {
@@ -15,12 +20,12 @@ voice.activi.io {
         }
     }
 
-    # Health check — used by load balancers and uptime monitors
+    # Health check
     handle /health {
         reverse_proxy orchestrator:3000
     }
 
-    # Block metrics endpoint from public access
+    # Block metrics from public access
     handle /metrics {
         respond 403
     }

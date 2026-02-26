@@ -17,6 +17,7 @@ export interface DeepgramASRClientEvents {
   transcript: [event: DeepgramTranscriptEvent];
   error: [error: Error];
   close: [code: number, reason: string];
+  reconnected: [];
 }
 
 /**
@@ -56,12 +57,18 @@ interface DeepgramStreamingResponse {
  *  - 'error': Fired when a WebSocket or parsing error occurs.
  *  - 'close': Fired when the WebSocket connection closes.
  */
+/** Exponential backoff delays for reconnect attempts (ms). */
+const RECONNECT_DELAYS_MS = [500, 1000, 2000] as const;
+/** Maximum reconnect attempts before giving up. */
+const MAX_RECONNECT_ATTEMPTS = 3;
+
 export class DeepgramASRClient extends EventEmitter<DeepgramASRClientEvents> {
   private ws: WebSocket | null = null;
   private readonly language: DeepgramLanguage;
   private readonly apiKey: string;
   private connected = false;
   private closing = false;
+  private reconnectAttempts = 0;
 
   constructor(language: DeepgramLanguage, apiKey: string) {
     super();
@@ -132,11 +139,16 @@ export class DeepgramASRClient extends EventEmitter<DeepgramASRClientEvents> {
         this.ws = null;
 
         logger.info(
-          { code, reason: reasonStr, language: this.language },
+          { code, reason: reasonStr, language: this.language, closing: this.closing },
           'Deepgram: WebSocket closed',
         );
 
-        this.emit('close', code, reasonStr);
+        // Only reconnect on unexpected closes (not initiated by close() call)
+        if (!this.closing) {
+          this.scheduleReconnect();
+        } else {
+          this.emit('close', code, reasonStr);
+        }
       });
     });
   }
@@ -211,6 +223,48 @@ export class DeepgramASRClient extends EventEmitter<DeepgramASRClientEvents> {
 
       this.ws.close();
     });
+  }
+
+  /**
+   * Attempts to reconnect with exponential backoff.
+   * Emits 'error' after MAX_RECONNECT_ATTEMPTS failures.
+   */
+  private scheduleReconnect(): void {
+    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      logger.error(
+        { language: this.language, attempts: this.reconnectAttempts },
+        'Deepgram: max reconnect attempts reached',
+      );
+      this.reconnectAttempts = 0;
+      this.emit('error', new Error(
+        `Deepgram WebSocket failed to reconnect after ${MAX_RECONNECT_ATTEMPTS} attempts`,
+      ));
+      return;
+    }
+
+    const delayMs = RECONNECT_DELAYS_MS[this.reconnectAttempts] ?? 2000;
+    this.reconnectAttempts += 1;
+
+    logger.info(
+      { language: this.language, attempt: this.reconnectAttempts, delayMs },
+      'Deepgram: scheduling reconnect',
+    );
+
+    setTimeout(async () => {
+      if (this.closing) return;
+      try {
+        await this.connect();
+        this.reconnectAttempts = 0;
+        logger.info({ language: this.language }, 'Deepgram: reconnected successfully');
+        this.emit('reconnected');
+      } catch (error) {
+        logger.warn(
+          { err: error, language: this.language, attempt: this.reconnectAttempts },
+          'Deepgram: reconnect attempt failed',
+        );
+        this.scheduleReconnect();
+      }
+    }, delayMs);
   }
 
   /** Returns whether the WebSocket connection is currently open. */

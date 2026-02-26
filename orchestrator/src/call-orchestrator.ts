@@ -117,6 +117,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
   // ── Processing guard ─────────────────────────────────────────────
   private isProcessingTurn: boolean = false;
+  private currentLLMAbortController: AbortController | null = null;
 
   constructor(params: CallOrchestratorParams) {
     super();
@@ -515,6 +516,13 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
     logger.info({ callId: this.callId }, 'Barge-in detected — cancelling TTS playback');
 
+    // Abort any in-flight LLM stream so the generator loop exits
+    this.currentLLMAbortController?.abort();
+    this.currentLLMAbortController = null;
+
+    // Release the processing guard so the next user turn is not dropped
+    this.isProcessingTurn = false;
+
     // Cancel current TTS pipeline
     if (this.currentTTSPipeline) {
       this.currentTTSPipeline.destroy();
@@ -693,10 +701,12 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       }
 
       // 5. Stream LLM response
+      this.currentLLMAbortController = new AbortController();
       const generator = streamLLMResponse({
         model,
         messages,
         maxTokens: 300,
+        signal: this.currentLLMAbortController.signal,
       });
 
       let firstTokenReceived = false;
@@ -747,6 +757,9 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         }
       }
     } finally {
+      // Clear the LLM abort controller for this turn
+      this.currentLLMAbortController = null;
+
       // Clean up TTS pipeline for this turn
       if (this.currentTTSPipeline) {
         this.currentTTSPipeline.destroy();

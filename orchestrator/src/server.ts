@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import fastifyWebsocket from '@fastify/websocket';
+import fastifyRateLimit from '@fastify/rate-limit';
 import { pinoHttp } from 'pino-http';
 import { logger } from './utils/logger.js';
 import { config } from './config.js';
@@ -7,6 +8,7 @@ import { registerHealthRoute } from './health.js';
 import { setupGracefulShutdown } from './graceful-shutdown.js';
 import { createTelephonyProvider } from './telephony/factory.js';
 import type { TelephonyEvents } from './telephony/provider.js';
+import type { FastifyRequest } from 'fastify';
 
 // These will be injected when DB and Redis are initialized
 import type { Pool } from 'pg';
@@ -45,6 +47,26 @@ export async function createServer(deps: ServerDependencies) {
     options: {
       maxPayload: 65536, // 64KB per WebSocket frame
     },
+  });
+
+  // Rate limiting — protect webhook endpoints from flooding
+  // Vonage sends webhooks from known infrastructure; 200 req/min per IP is generous
+  await app.register(fastifyRateLimit, {
+    global: true,
+    max: 200,
+    timeWindow: '1 minute',
+    keyGenerator: (req: FastifyRequest): string => req.ip ?? 'unknown',
+    // Skip health checks and WebSocket upgrades
+    allowList: (req: FastifyRequest): boolean =>
+      req.url === '/health' || req.headers['upgrade'] === 'websocket',
+    errorResponseBuilder: (
+      _req: FastifyRequest,
+      context: { after: string; max: number },
+    ) => ({
+      statusCode: 429,
+      error: 'Too Many Requests',
+      message: `Rate limit exceeded. Try again in ${context.after}.`,
+    }),
   });
 
   // HTTP request logging via Pino

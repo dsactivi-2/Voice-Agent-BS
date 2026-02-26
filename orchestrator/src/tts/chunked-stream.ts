@@ -182,7 +182,14 @@ export class ChunkedTTSPipeline extends EventEmitter<ChunkedTTSPipelineEvents> {
 
     this.emit('chunkReady', text);
 
-    const synthesisTask = this.synthesizeChunk(text);
+    // Use `let` so the finally callback can reference synthesisTask after assignment.
+    // This self-cleaning pattern prevents settled Promises from accumulating in the
+    // array indefinitely under load — fixing the memory leak in long calls.
+    let synthesisTask: Promise<void>;
+    synthesisTask = this.synthesizeChunk(text).finally(() => {
+      const idx = this.pendingSyntheses.indexOf(synthesisTask);
+      if (idx !== -1) this.pendingSyntheses.splice(idx, 1);
+    });
     this.pendingSyntheses.push(synthesisTask);
   }
 

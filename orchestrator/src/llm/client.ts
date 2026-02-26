@@ -12,6 +12,7 @@ export interface LLMRequestParams {
   model: string;
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
   maxTokens: number;
+  signal?: AbortSignal;
 }
 
 const openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
@@ -46,6 +47,7 @@ export async function* streamLLMResponse(
       max_tokens: params.maxTokens,
       response_format: { type: 'json_object' },
       stream: true,
+      ...(params.signal ? { signal: params.signal } : {}),
     }),
     createTimeoutPromise(config.LLM_TIMEOUT_MS),
   ]);
@@ -60,8 +62,21 @@ export async function* streamLLMResponse(
     }
   }
 
-  const parsed = JSON.parse(fullContent) as LLMResponse;
-  return parsed;
+  try {
+    const parsed = JSON.parse(fullContent) as LLMResponse;
+    return parsed;
+  } catch (parseError) {
+    logger.error(
+      { parseError, rawContent: fullContent },
+      'Failed to parse LLM JSON response \u2014 returning default LLMResponse',
+    );
+    return {
+      reply_text: '',
+      interest_score: 0.5,
+      complexity_score: 0.3,
+      phase: 'hook',
+    };
+  }
 }
 
 export async function getLLMResponseWithFallback(
