@@ -17,11 +17,33 @@ export interface OutboundCallParams {
 // Telephony event callbacks
 // ---------------------------------------------------------------------------
 
+/**
+ * Minimal interface shared by all media session implementations
+ * (Telnyx MediaStreamSession, Vonage VonageMediaSession, etc.).
+ * Both emit: 'audio' (Buffer), 'stop' (any), 'error' (Error)
+ */
+export interface MediaSession {
+  sendAudio(buffer: Buffer): void;
+  isOpen(): boolean;
+  close(): void;
+  on(event: 'audio', listener: (buffer: Buffer) => void): this;
+  on(event: 'stop', listener: (info?: unknown) => void): this;
+  on(event: 'error', listener: (error: Error) => void): this;
+  off(event: 'audio', listener: (buffer: Buffer) => void): this;
+  off(event: 'stop', listener: (info?: unknown) => void): this;
+  off(event: 'error', listener: (error: Error) => void): this;
+}
+
 export interface TelephonyEvents {
   onCallStarted: (callId: string, phoneNumber: string, fromNumber: string) => void;
   onCallEnded: (callId: string, reason: string) => void;
   onAudioReceived: (callId: string, audio: Buffer) => void;
   onError: (callId: string, error: Error) => void;
+  onMediaSessionReady?: (
+    callId: string,
+    session: MediaSession,
+    meta: { phoneNumber: string; fromNumber: string },
+  ) => void;
 }
 
 // ---------------------------------------------------------------------------

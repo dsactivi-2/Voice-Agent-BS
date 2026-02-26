@@ -51,3 +51,24 @@ export function routeByPhoneNumber(calledNumber: string): AgentConfig {
 
   return agentConfig;
 }
+
+/**
+ * Determines the agent config for a Vonage inbound call.
+ * Uses VONAGE_PHONE_NUMBER for routing; defaults to agentBS.
+ *
+ * @param calledNumber - The Vonage number that received the call (E.164 format)
+ * @returns AgentConfig for the matched language
+ */
+export function routeVonageCall(calledNumber: string): AgentConfig {
+  const normalised = normaliseNumber(calledNumber);
+  const vonageNumber = normaliseNumber(config.VONAGE_PHONE_NUMBER ?? '');
+
+  if (vonageNumber && normalised === vonageNumber) {
+    logger.info({ calledNumber, language: agentBS.language }, 'Vonage call routed to BS agent');
+    return agentBS;
+  }
+
+  // Default: Bosnia/Herzegovina agent
+  logger.info({ calledNumber }, 'Vonage call defaulting to BS agent');
+  return agentBS;
+}

@@ -14,7 +14,7 @@ import type {
 } from './types.js';
 
 // Telnyx
-import type { MediaStreamSession } from './telnyx/media-stream.js';
+import type { MediaSession } from './telephony/provider.js';
 
 // Audio
 import { RingBuffer } from './audio/ring-buffer.js';
@@ -74,7 +74,7 @@ export interface CallOrchestratorParams {
   phoneNumber: string;
   agentConfig: AgentConfig;
   campaignId: string;
-  mediaSession: MediaStreamSession;
+  mediaSession: MediaSession;
 }
 
 // ---------------------------------------------------------------------------
@@ -97,7 +97,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
   private readonly phoneNumber: string;
   private readonly agentConfig: AgentConfig;
   private readonly campaignId: string;
-  private readonly mediaSession: MediaStreamSession;
+  private readonly mediaSession: MediaSession;
 
   // ── Per-call components ──────────────────────────────────────────
   private session: CallSession | null = null;
@@ -185,6 +185,9 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       );
 
       this.emit('started', this.callId);
+
+      // 8. Send initial greeting
+      await this.sendGreeting();
 
       logger.info(
         {
@@ -278,6 +281,45 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     );
   }
 
+
+  /**
+   * Synthesizes and sends the opening greeting to the caller using the
+   * agent configured intro phrase. Falls back silently on error.
+   */
+  private async sendGreeting(): Promise<void> {
+    const introText = this.agentConfig.cachedPhrases?.['intro'];
+    if (!introText || this.stopped || !this.mediaSession.isOpen()) return;
+
+    try {
+      // Try Redis cache first (populated by warmup at startup)
+      const langSuffix = this.agentConfig.language === 'sr-RS' ? 'sr' : 'bs';
+      const cachedKey = `intro_${langSuffix}:${this.agentConfig.language}`;
+      const cached = await getCachedAudio(cachedKey);
+
+      if (cached && this.mediaSession.isOpen()) {
+        this.mediaSession.sendAudio(cached);
+        logger.info({ callId: this.callId, bytes: cached.byteLength }, 'Greeting sent from cache');
+        return;
+      }
+
+      // Cache miss - synthesize directly
+      const { synthesizeSpeech } = await import('./tts/azure-client.js');
+      const audio = await synthesizeSpeech(
+        introText,
+        this.agentConfig.language,
+        this.agentConfig.ttsVoice,
+      );
+
+      if (this.mediaSession.isOpen()) {
+        this.mediaSession.sendAudio(audio);
+        logger.info({ callId: this.callId, bytes: audio.byteLength }, 'Greeting synthesized and sent');
+      }
+    } catch (err) {
+      logger.error({ err, callId: this.callId }, 'Failed to send greeting - call continues without it');
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════
   // ════════════════════════════════════════════════════════════════
   // Event binding
   // ════════════════════════════════════════════════════════════════
