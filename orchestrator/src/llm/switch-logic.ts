@@ -4,7 +4,6 @@ import { logger } from '../utils/logger.js';
 import type { CallSession, ABGroup, Phase } from '../types.js';
 
 const SWITCH_ELIGIBLE_PHASES: ReadonlySet<Phase> = new Set([
-  'pitch',
   'objection',
   'close',
 ]);
@@ -42,17 +41,17 @@ export function shouldSwitchToFull(session: CallSession): boolean {
   const complexityTriggered =
     session.complexityScore > config.LLM_SWITCH_COMPLEXITY_THRESHOLD;
 
-  if (interestTriggered || complexityTriggered) {
+  if (interestTriggered && complexityTriggered) {
     logger.info(
       {
         callId: session.callId,
         phase: session.phase,
         interestAvg,
         complexityScore: session.complexityScore,
-        interestTriggered,
-        complexityTriggered,
+        interestThreshold: config.LLM_SWITCH_INTEREST_THRESHOLD,
+        complexityThreshold: config.LLM_SWITCH_COMPLEXITY_THRESHOLD,
       },
-      'LLM switch triggered: score thresholds exceeded',
+      'LLM_SWITCH mini→full: both score thresholds exceeded',
     );
     return true;
   }

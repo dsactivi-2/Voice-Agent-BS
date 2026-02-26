@@ -117,6 +117,8 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
   // ── Processing guard ─────────────────────────────────────────────
   private isProcessingTurn: boolean = false;
+  /** Monotonically increasing counter used to detect stale finally-blocks after barge-in. */
+  private activeTurnId: number = 0;
   private currentLLMAbortController: AbortController | null = null;
 
   constructor(params: CallOrchestratorParams) {
@@ -452,6 +454,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     }
 
     this.isProcessingTurn = true;
+    const myTurnId = ++this.activeTurnId;
     const turnStartTime = Date.now();
 
     try {
@@ -546,7 +549,12 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         'Error processing user turn — call continues',
       );
     } finally {
-      this.isProcessingTurn = false;
+      // Only reset if this turn is still the active one.
+      // Barge-in increments activeTurnId, so a stale finally-block won't
+      // clear the guard for the new turn that started after barge-in.
+      if (this.activeTurnId === myTurnId) {
+        this.isProcessingTurn = false;
+      }
     }
   }
 
@@ -561,6 +569,11 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     // Abort any in-flight LLM stream so the generator loop exits
     this.currentLLMAbortController?.abort();
     this.currentLLMAbortController = null;
+
+    // Increment turn ID BEFORE resetting the processing guard.
+    // This ensures any in-flight handleUserFinishedSpeaking finally-block
+    // won't see a matching ID and won't clear the guard for the next turn.
+    this.activeTurnId++;
 
     // Release the processing guard so the next user turn is not dropped
     this.isProcessingTurn = false;
@@ -716,6 +729,20 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       ? config.LLM_FULL_MODEL
       : config.LLM_MINI_MODEL;
 
+    logger.info(
+      {
+        callId: this.callId,
+        turn: this.turnCounter,
+        llm_mode: this.session.llmMode,
+        model_name: model,
+        phase: this.session.phase,
+        interest_scores: this.session.interestScores.slice(-3),
+        complexity_score: this.session.complexityScore,
+        ab_group: this.session.abGroup,
+      },
+      'LLM_TURN_START',
+    );
+
     // 2. Calculate adaptive delay
     const adaptiveDelayMs = calculateAdaptiveDelay(transcript, 0);
 
@@ -788,6 +815,16 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       logger.error(
         { err: error, callId: this.callId, model },
         'LLM streaming failed — attempting to continue',
+      );
+
+      logger.warn(
+        {
+          callId: this.callId,
+          turn: this.turnCounter,
+          model_name: model,
+          error_type: error instanceof Error ? error.constructor.name : 'unknown',
+        },
+        'LLM_TURN_FALLBACK',
       );
 
       // Try to flush whatever we have

@@ -5,14 +5,18 @@ import { synthesizeSpeech } from './azure-client.js';
 import { getCachedAudio, setCachedAudio } from './cache.js';
 import type { Language } from '../types.js';
 
-/** Punctuation characters that signal a natural chunk boundary. */
-const CHUNK_TRIGGERS = ['.', '!', '?', ',', '\u2014', '\u2026'] as const;
+/** Only sentence-ending punctuation triggers a chunk flush.
+ * Commas, dashes, and ellipsis intentionally excluded — they cause
+ * unnatural pauses in mid-sentence speech. */
+const CHUNK_TRIGGERS = ['.', '!', '?'] as const;
 
-/** Minimum character count before a chunk is eligible for flushing. */
-const MIN_CHUNK_LENGTH = 15;
+/** Minimum character count before a chunk is eligible for flushing.
+ * Set high enough to avoid sending tiny fragments to Azure TTS. */
+const MIN_CHUNK_LENGTH = 80;
 
-/** Maximum milliseconds to wait before forcing a flush regardless of punctuation. */
-const MAX_WAIT_MS = 800;
+/** Maximum milliseconds to wait before forcing a flush.
+ * Reduced to keep latency reasonable for very long sentences. */
+const MAX_WAIT_MS = 500;
 
 /** Callback type for receiving synthesized PCM audio chunks. */
 export type AudioChunkCallback = (audio: Buffer, text: string) => void;
@@ -31,7 +35,7 @@ export interface ChunkedTTSPipelineEvents {
  * Determines whether the accumulated buffer should be flushed for TTS synthesis.
  *
  * The buffer is flushed when:
- * 1. It exceeds {@link MIN_CHUNK_LENGTH} AND ends with a chunk trigger character, OR
+ * 1. It exceeds {@link MIN_CHUNK_LENGTH} AND ends with a sentence-ending trigger character (.!?), OR
  * 2. It exceeds {@link MIN_CHUNK_LENGTH} AND the wait time has exceeded {@link MAX_WAIT_MS}.
  *
  * @param buffer     - The currently accumulated token buffer
