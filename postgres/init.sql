@@ -89,3 +89,10 @@ CREATE TABLE call_memory (
 
 CREATE INDEX idx_memory_phone     ON call_memory (phone_number);
 CREATE INDEX idx_memory_last_call ON call_memory (last_call_at DESC);
+
+-- =============================================================
+-- Management Platform Tables
+-- NOTE: Run migrations/001_pgvector.sql through 011_updated_at_triggers.sql
+-- These are applied via the management-api service on startup or manually.
+-- See postgres/migrations/README.md for instructions.
+-- =============================================================

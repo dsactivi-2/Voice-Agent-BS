@@ -13,13 +13,30 @@ function normaliseNumber(phone: string): string {
 }
 
 /**
- * Internal routing table mapping normalised Telnyx phone numbers
- * to their corresponding agent configurations.
+ * Internal routing table mapping normalised phone numbers to their
+ * corresponding agent configurations.
+ *
+ * Covers both Telnyx numbers (TELNYX_PHONE_BS / TELNYX_PHONE_SR) and
+ * the single Vonage DE number (VONAGE_PHONE_NUMBER → BS agent / Goran).
+ * Entries whose config value is undefined are skipped so that an empty
+ * string is never registered as a valid route.
  */
 function buildRoutingTable(): Map<string, AgentConfig> {
   const table = new Map<string, AgentConfig>();
-  table.set(normaliseNumber(config.TELNYX_PHONE_BS ?? ''), agentBS);
-  table.set(normaliseNumber(config.TELNYX_PHONE_SR ?? ''), agentSR);
+
+  // Telnyx routes
+  if (config.TELNYX_PHONE_BS) {
+    table.set(normaliseNumber(config.TELNYX_PHONE_BS), agentBS);
+  }
+  if (config.TELNYX_PHONE_SR) {
+    table.set(normaliseNumber(config.TELNYX_PHONE_SR), agentSR);
+  }
+
+  // Vonage DE number → Bosnian agent (Goran)
+  if (config.VONAGE_PHONE_NUMBER) {
+    table.set(normaliseNumber(config.VONAGE_PHONE_NUMBER), agentBS);
+  }
+
   return table;
 }
 

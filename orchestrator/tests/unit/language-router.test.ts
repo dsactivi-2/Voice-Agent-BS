@@ -8,6 +8,7 @@ vi.mock('../../src/config.js', () => ({
   config: {
     TELNYX_PHONE_BS: '+38733123456',
     TELNYX_PHONE_SR: '+381111234567',
+    VONAGE_PHONE_NUMBER: '+4915112345678',
     ANTI_LOOP_COOLDOWN_HOURS: 24,
   },
 }));
@@ -72,6 +73,14 @@ describe('routeByPhoneNumber', () => {
     const agent = routeByPhoneNumber('+381-(11)-1234567');
 
     expect(agent.language).toBe('sr-RS');
+  });
+
+  it('routes the Vonage DE number to the BS agent (Goran)', () => {
+    const agent = routeByPhoneNumber('+4915112345678');
+
+    expect(agent.language).toBe('bs-BA');
+    expect(agent.deepgramLanguage).toBe('bs');
+    expect(agent.ttsVoice).toBe('bs-BA-GoranNeural');
   });
 
   it('returns a complete AgentConfig with all required fields for BS', () => {
