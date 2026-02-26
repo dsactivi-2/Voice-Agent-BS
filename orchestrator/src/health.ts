@@ -86,14 +86,18 @@ export function registerHealthRoute(
 
     const checks = { postgres, redis, deepgram, azureTts, openai };
 
-    const allChecks = Object.values(checks);
-    const hasError = allChecks.some((c) => c.status === 'error');
-    const hasSlow = allChecks.some((c) => c.latencyMs > 1000 && c.status === 'ok');
+    // Critical services: postgres + redis must be healthy
+    const criticalChecks = [postgres, redis];
+    const externalChecks = [deepgram, azureTts, openai];
+
+    const hasCriticalError = criticalChecks.some((c) => c.status === 'error');
+    const hasExternalError = externalChecks.some((c) => c.status === 'error');
+    const hasSlow = Object.values(checks).some((c) => c.latencyMs > 1000 && c.status === 'ok');
 
     let status: HealthStatus;
-    if (hasError) {
+    if (hasCriticalError) {
       status = 'unhealthy';
-    } else if (hasSlow) {
+    } else if (hasExternalError || hasSlow) {
       status = 'degraded';
     } else {
       status = 'healthy';
