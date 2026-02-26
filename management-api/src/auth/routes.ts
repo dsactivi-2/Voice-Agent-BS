@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod/v4';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { query } from '../db/pool.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken, getTokenRemainingTtl } from './jwt.js';
 import { authenticate } from '../middleware/auth.js';

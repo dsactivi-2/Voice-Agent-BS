@@ -25,9 +25,24 @@ voice.activi.io {
         reverse_proxy orchestrator:3000
     }
 
-    # Block metrics from public access
+    # Metrics — internal Prometheus only (external blocked)
     handle /metrics {
         respond 403
+    }
+
+    # Management API — all /api/manage/* routes
+    handle /api/manage/* {
+        reverse_proxy management-api:3001
+    }
+
+    # Management UI — React app (placeholder until UI service is built)
+    handle /app* {
+        reverse_proxy management-api:3001
+    }
+
+    # Grafana dashboard
+    handle /grafana* {
+        reverse_proxy grafana:3000
     }
 
     # Catch-all — reject unknown paths

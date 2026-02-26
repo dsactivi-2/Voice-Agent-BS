@@ -37,18 +37,16 @@ async function main(): Promise<void> {
 
   // ── Routes ───────────────────────────────────────────────────────────────
 
-  const { authRoutes } = await import('./auth/routes.js');
+  const { authRoutes, setRedisClient } = await import('./auth/routes.js');
   const { healthRoutes } = await import('./routes/health.js');
 
   // Configure Redis for auth routes
   try {
-    const { default: Redis } = await import('ioredis');
-    const redis = new Redis(config.REDIS_URL);
-    const { setRedisClient } = await import('./auth/routes.js');
+    const { redis } = await import('./utils/redis.js');
     setRedisClient(redis);
-    logger.info('Redis client connected');
-  } catch {
-    logger.warn('ioredis not available — refresh token blacklisting disabled');
+    logger.info('Redis client configured');
+  } catch (redisErr) {
+    logger.warn({ err: redisErr }, 'Redis initialization failed — refresh token blacklisting disabled');
   }
 
   await fastify.register(authRoutes);

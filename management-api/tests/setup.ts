@@ -1,8 +1,9 @@
 import { vi, beforeAll, afterAll } from 'vitest';
 
-// ─── Environment ──────────────────────────────────────────────────────────────
+// ─── Environment — set BEFORE any module import ───────────────────────────────
+// Vitest runs setup files first, so these vars will be present when
+// config.ts is evaluated.
 
-// Set environment variables BEFORE any module is imported that reads them.
 process.env['NODE_ENV'] = 'test';
 process.env['DATABASE_URL'] = 'postgres://test:test@localhost:5432/test';
 process.env['REDIS_URL'] = 'redis://localhost:6379';
@@ -11,15 +12,16 @@ process.env['JWT_REFRESH_SECRET'] = 'test-refresh-secret-must-be-32-chars!!';
 process.env['JWT_ACCESS_TTL'] = '15m';
 process.env['JWT_REFRESH_TTL'] = '7d';
 process.env['PORT'] = '3099';
-process.env['LOG_LEVEL'] = 'silent';
+process.env['LOG_LEVEL'] = 'error'; // valid pino level — suppress most output during tests
 process.env['BCRYPT_ROUNDS'] = '4'; // Fast rounds for tests
 
 // ─── pg Pool mock ─────────────────────────────────────────────────────────────
+// Mock the entire pool module so no real DB connection is attempted.
 
 vi.mock('../src/db/pool.js', () => {
   const queryMock = vi.fn();
   const poolMock = {
-    query: vi.fn(),
+    query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
     on: vi.fn(),
     end: vi.fn().mockResolvedValue(undefined),
   };
@@ -31,22 +33,35 @@ vi.mock('../src/db/pool.js', () => {
   };
 });
 
-// ─── ioredis mock ─────────────────────────────────────────────────────────────
+// ─── ioredis mock — prevent real Redis connections ────────────────────────────
 
 vi.mock('ioredis', () => {
-  const RedisMock = vi.fn().mockImplementation(() => ({
-    get: vi.fn().mockResolvedValue(null),
-    set: vi.fn().mockResolvedValue('OK'),
-    quit: vi.fn().mockResolvedValue(undefined),
-    disconnect: vi.fn(),
-  }));
+  class RedisMock {
+    on(_event: string, _handler: unknown) { return this; }
+    get(_key: string): Promise<string | null> { return Promise.resolve(null); }
+    set(_key: string, _value: string, _mode: string, _ttl: number): Promise<string | null> { return Promise.resolve('OK'); }
+    quit(): Promise<void> { return Promise.resolve(); }
+    disconnect(): void { /* noop */ }
+  }
 
-  return { default: RedisMock };
+  return { Redis: RedisMock };
+});
+
+// ─── utils/redis mock — prevent config being read at module import ────────────
+
+vi.mock('../src/utils/redis.js', () => {
+  return {
+    redis: {
+      on: vi.fn(),
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue('OK'),
+      quit: vi.fn().mockResolvedValue(undefined),
+    },
+  };
 });
 
 beforeAll(() => {
-  // Silence pino output during tests
-  process.env['LOG_LEVEL'] = 'silent';
+  // Intentionally empty — env vars are set at module level above.
 });
 
 afterAll(() => {
