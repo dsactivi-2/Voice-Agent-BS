@@ -95,7 +95,7 @@ export function buildAnswerNcco(callId: string, baseUrl: string): NccoAction[] {
 // ---------------------------------------------------------------------------
 
 export interface VonageWebhookCallbacks {
-  onCallStarted?: (uuid: string, from: string, to: string) => void | Promise<void>;
+  onCallStarted?: (uuid: string, from: string, to: string, direction: string) => void | Promise<void>;
   onCallAnswered?: (uuid: string, from: string, to: string) => void | Promise<void>;
   onCallCompleted?: (uuid: string, reason: string, duration: string) => void | Promise<void>;
   onCallRinging?: (uuid: string) => void | Promise<void>;
@@ -184,7 +184,7 @@ export function createEventHandler(callbacks?: VonageWebhookCallbacks): RouteHan
       switch (status) {
         case 'started': {
           if (callbacks?.onCallStarted) {
-            await callbacks.onCallStarted(uuid, from ?? '', to ?? '');
+            await callbacks.onCallStarted(uuid, from ?? '', to ?? '', event.direction ?? 'inbound');
           }
           break;
         }

@@ -13,8 +13,12 @@ import type {
   Turn,
 } from './types.js';
 
-// Telnyx
+// Telephony
 import type { MediaSession } from './telephony/provider.js';
+
+// Deepgram ASR
+import { DeepgramASRClient } from './deepgram/client.js';
+import type { DeepgramLanguage } from './deepgram/client.js';
 
 // Audio
 import { RingBuffer } from './audio/ring-buffer.js';
@@ -105,6 +109,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
   private vadDetector: VADDetector | null = null;
   private turnTakingManager: TurnTakingManager | null = null;
   private ringBuffer: RingBuffer | null = null;
+  private asrClient: DeepgramASRClient | null = null;
 
   // ── Per-turn TTS pipeline ────────────────────────────────────────
   private currentTTSPipeline: ChunkedTTSPipeline | null = null;
@@ -174,7 +179,20 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       this.bindMediaSessionEvents();
       this.bindTurnTakingEvents();
 
-      // 7. Persist call record to DB
+      // 7. Connect Deepgram ASR
+      this.asrClient = new DeepgramASRClient(
+        this.agentConfig.deepgramLanguage as DeepgramLanguage,
+        config.DEEPGRAM_API_KEY,
+      );
+      await this.asrClient.connect();
+      this.asrClient.on('transcript', (event) => {
+        this.turnTakingManager?.onTranscriptReceived(event.isFinal, event.text);
+      });
+      this.asrClient.on('error', (error) => {
+        logger.error({ err: error, callId: this.callId }, 'Deepgram ASR error');
+      });
+
+      // 9. Persist call record to DB
       await this.safeDbOperation('createCall', () =>
         createCall({
           callId: this.callId,
@@ -188,7 +206,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
       this.emit('started', this.callId);
 
-      // 8. Send initial greeting
+      // 10. Send initial greeting
       await this.sendGreeting();
 
       logger.info(
@@ -360,6 +378,9 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
       // Feed to VAD for speech detection
       this.vadDetector?.processAudio(buffer);
+
+      // Stream audio to Deepgram ASR
+      this.asrClient?.sendAudio(buffer);
 
       // Mark that caller has recent audio activity
       if (this.session) {
@@ -943,6 +964,12 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
   private cleanup(): void {
     // Unbind media session events
     this.unbindMediaSessionEvents();
+
+    // Close Deepgram ASR connection
+    if (this.asrClient) {
+      void this.asrClient.close();
+      this.asrClient = null;
+    }
 
     // Destroy TTS pipeline if active
     if (this.currentTTSPipeline) {

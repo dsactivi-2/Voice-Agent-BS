@@ -61,8 +61,8 @@ export class VonageProvider implements TelephonyProvider {
 
     // GET+POST /vonage/events — Receives call lifecycle events
     const callbacks: VonageWebhookCallbacks = {
-      onCallStarted: async (uuid, from, to) => {
-        await this.handleCallStarted(uuid, from, to);
+      onCallStarted: async (uuid, from, to, direction) => {
+        await this.handleCallStarted(uuid, from, to, direction);
       },
       onCallAnswered: async (uuid, from, to) => {
         this.handleCallAnswered(uuid, from, to);
@@ -142,16 +142,23 @@ export class VonageProvider implements TelephonyProvider {
   // Internal event handlers
   // -------------------------------------------------------------------------
 
-  private async handleCallStarted(uuid: string, from: string, to: string): Promise<void> {
-    // Store caller/called mapping for use when media WebSocket connects
-    this.pendingCallMeta.set(uuid, { phoneNumber: from, fromNumber: to });
-
+  private async handleCallStarted(uuid: string, from: string, to: string, direction: string): Promise<void> {
     logger.info(
-      { uuid, from, to },
+      { uuid, from, to, direction },
       'Vonage call started',
     );
 
-    // Anti-loop check
+    // Skip processing for outbound WebSocket legs (NCCO connect actions)
+    // These have direction='outbound' and are not real inbound calls
+    if (direction === 'outbound') {
+      logger.debug({ uuid, direction }, 'Vonage: skipping outbound WebSocket leg');
+      return;
+    }
+
+    // Store caller/called mapping for use when media WebSocket connects
+    this.pendingCallMeta.set(uuid, { phoneNumber: from, fromNumber: to });
+
+    // Anti-loop check — only for real inbound calls with a valid caller number
     const allowed = await canCallNumber(from);
     if (!allowed) {
       logger.warn(
