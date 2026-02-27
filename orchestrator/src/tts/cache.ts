@@ -11,14 +11,15 @@ const KEY_PREFIX = 'tts:audio:';
  * Each entry maps to the text spoken for that phrase per language variant.
  */
 const STANDARD_PHRASES: Record<string, Record<Language, string>> = {
-  // Greeting phrases — must match agent cachedPhrases.intro exactly
+  // Greeting phrases — phonetic version (avoids <sub> SSML element that causes Azure reason=1)
+  // Audio plays identically to the agent's intro phrase; cache key match is what matters
   intro_bs: {
-    'bs-BA': 'Dobar dan — Goran ovdje iz Step2Job-a.',
-    'sr-RS': 'Dobar dan — Goran ovdje iz Step2Job-a.',
+    'bs-BA': 'Dobar dan, Goran ovdje iz Step Tu Džob-a.',
+    'sr-RS': 'Dobar dan, Goran ovdje iz Step Tu Džob-a.',
   },
   intro_sr: {
-    'bs-BA': 'Dobar dan! Moje ime je Nikola iz firme Step2Job.',
-    'sr-RS': 'Dobar dan! Moje ime je Nikola iz firme Step2Job.',
+    'bs-BA': 'Dobar dan! Moje ime je Nikola iz firme Step Tu Džob.',
+    'sr-RS': 'Dobar dan! Moje ime je Nikola iz firme Step Tu Džob.',
   },
   // Repeat phrases — must match agent cachedPhrases.repeat
   repeat_bs: {
