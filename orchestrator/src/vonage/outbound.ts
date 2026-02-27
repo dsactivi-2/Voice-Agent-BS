@@ -106,9 +106,8 @@ export async function initiateOutboundCall(
   }
 
   const baseUrl = process.env['HOST'] ?? 'localhost';
-  const port = config.PORT;
-  const answerUrl = `https://${baseUrl}:${port}/vonage/answer`;
-  const eventUrl = `https://${baseUrl}:${port}/vonage/events`;
+  const answerUrl = `https://${baseUrl}/vonage/answer`;
+  const eventUrl = `https://${baseUrl}/vonage/events`;
 
   // Initiate the call via Vonage API with retry
   const vonage = getVonageClient();

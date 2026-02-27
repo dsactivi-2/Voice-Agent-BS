@@ -30,10 +30,16 @@ export function buildSSML(text: string, language: Language, voice: string): stri
   // Replace "Step2Job" with a phonetic alias so the Bosnian/Serbian neural
   // voice reads it intelligibly. The <sub> element substitutes the spoken
   // text without affecting the displayed/logged text.
-  const brandInjected = escaped.replace(
-    /\bStep2Job\b/gi,
-    '<sub alias="Step Tu Džob">Step2Job</sub>',
-  );
+  // Switch to English for "Step2Job" so the Bosnian voice says it in English
+  const brandInjected = escaped
+    .replace(
+      /Step2Job-a/gi,
+      '<lang xml:lang="en-US">Step2Job</lang>-a',
+    )
+    .replace(
+      /Step2Job/gi,
+      '<lang xml:lang="en-US">Step2Job</lang>',
+    );
 
   // Wrap standalone integers (2+ digits) so Azure reads them as cardinal
   // numbers ("dvije hiljade osam stotina") rather than individual digits
@@ -47,7 +53,7 @@ export function buildSSML(text: string, language: Language, voice: string): stri
     `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="http://www.w3.org/2001/mstts" xml:lang="${language}">`,
     `  <voice name="${voice}">`,
     `    <mstts:express-as style="customerservice">`,
-    `      <prosody rate="-5%" pitch="+1%">`,
+    `      <prosody rate="-20%" pitch="+1%">`,
     `        ${withNumbers}`,
     `      </prosody>`,
     `    </mstts:express-as>`,

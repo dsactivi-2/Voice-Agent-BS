@@ -242,7 +242,8 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
       this.emit('started', this.callId);
 
-      // 10. Send initial greeting
+      // 10. Send initial greeting — 800ms pause simulates human pickup
+      await new Promise(resolve => setTimeout(resolve, 800));
       await this.sendGreeting();
 
       logger.info(

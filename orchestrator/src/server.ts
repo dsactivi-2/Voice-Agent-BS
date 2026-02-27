@@ -11,6 +11,8 @@ import type { TelephonyEvents } from './telephony/provider.js';
 import type { FastifyRequest } from 'fastify';
 import { CallOrchestrator } from './call-orchestrator.js';
 import { routeVonageCall } from './agents/language-router.js';
+import { initiateOutboundCall } from './vonage/outbound.js';
+import { z } from 'zod/v4';
 
 // These will be injected when DB and Redis are initialized
 import type { Pool } from 'pg';
@@ -171,9 +173,29 @@ export async function createServer(deps: ServerDependencies) {
     'Telephony provider registered',
   );
 
-  // Outbound call API (placeholder — AP-07 will implement)
-  app.post('/api/calls/outbound', async (_req, reply) => {
-    await reply.status(501).send({ error: 'Not implemented yet — see AP-07' });
+  // Outbound call API
+  const outboundBodySchema = z.object({
+    phoneNumber: z.string().min(1),
+    language: z.enum(['bs-BA', 'sr-RS']).default('bs-BA'),
+    campaignId: z.string().min(1).default('manual'),
+  });
+
+  app.post('/api/calls/outbound', async (req, reply) => {
+    const parsed = outboundBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'Invalid request', details: parsed.error.flatten() });
+    }
+
+    const { phoneNumber, language, campaignId } = parsed.data;
+
+    try {
+      const result = await initiateOutboundCall(phoneNumber, language, campaignId);
+      return reply.status(200).send({ success: true, ...result });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err, phoneNumber, campaignId }, 'Outbound call failed');
+      return reply.status(500).send({ error: message });
+    }
   });
 
   // Setup graceful shutdown
