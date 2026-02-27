@@ -24,6 +24,8 @@ export interface OutboundCallParams {
  */
 export interface MediaSession {
   sendAudio(buffer: Buffer): void;
+  /** Clears any buffered (not yet sent) audio. Call on barge-in. */
+  clearAudioQueue(): void;
   isOpen(): boolean;
   close(): void;
   on(event: 'audio', listener: (buffer: Buffer) => void): this;

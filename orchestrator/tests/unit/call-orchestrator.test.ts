@@ -204,6 +204,7 @@ function createMockMediaSession() {
   const emitter = new EventEmitter();
   return Object.assign(emitter, {
     sendAudio: vi.fn(),
+    clearAudioQueue: vi.fn(),
     close: vi.fn(),
     isOpen: vi.fn().mockReturnValue(true),
     getStreamId: vi.fn().mockReturnValue('stream-1'),

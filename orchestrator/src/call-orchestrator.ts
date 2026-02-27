@@ -667,6 +667,9 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       this.currentTTSPipeline = null;
     }
 
+    // Flush buffered audio frames so Vonage stops playing immediately
+    this.mediaSession.clearAudioQueue();
+
     // Inform turn-taking that bot stopped speaking
     this.isBotSpeaking = false;
     this.turnTakingManager?.setBotSpeaking(false);
