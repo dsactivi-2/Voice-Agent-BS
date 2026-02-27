@@ -9,3 +9,14 @@ coverage/
 .turbo/
 .pnpm-store/
 tmp/
+# AI tool directories (local only)
+.agent/
+.augment/
+.claude/
+.continue/
+.goose/
+.kiro/
+.qwen/
+.windsurf/
+skills/
+skills-lock.json
