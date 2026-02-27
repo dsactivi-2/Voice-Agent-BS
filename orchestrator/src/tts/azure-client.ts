@@ -114,24 +114,12 @@ function callAzureTTS(ssml: string): Promise<Buffer> {
           synthesizer.close();
           resolve(audioBuffer);
         } else {
-          // Extract cancellation details for better diagnostics
-          let cancelReason: string | undefined;
-          let cancelErrorCode: number | undefined;
-          let cancelErrorDetails: string | undefined;
-          try {
-            const cancelInfo = sdk.CancellationDetails.fromResult(result as unknown as sdk.SpeechRecognitionResult);
-            cancelReason = String(cancelInfo.reason);
-            cancelErrorCode = cancelInfo.ErrorCode;
-            cancelErrorDetails = cancelInfo.errorDetails;
-          } catch {
-            // CancellationDetails.fromResult may not work for synthesis results
-          }
           logger.error(
-            { reason: result.reason, cancelReason, cancelErrorCode, cancelErrorDetails, latencyMs },
+            { reason: result.reason, latencyMs },
             'Azure TTS synthesis failed',
           );
           synthesizer.close();
-          reject(new Error(`Synthesis failed: reason=${result.reason} code=${cancelErrorCode} details=${cancelErrorDetails ?? 'unknown'}`));
+          reject(new Error(`Synthesis failed: reason=${result.reason}`));
         }
       },
       (error: string) => {
