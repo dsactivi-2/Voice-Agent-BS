@@ -66,7 +66,8 @@ const vonageEventPayloadSchema = z.object({
   network: z.string().nullish(),
   reason: z.string().optional(),
   // Additional fields sent in some event types
-  sip_code: z.number().optional(),
+  // Vonage sends sip_code as a string ("200") despite the API docs showing number
+  sip_code: z.coerce.number().optional(),
   detail: z.string().optional(),
   disconnected_by: z.string().optional(),
 });
