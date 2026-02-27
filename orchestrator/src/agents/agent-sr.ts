@@ -82,7 +82,7 @@ VAZNO: Ako osoba jasno odbija dva puta zaredom, ljubazno se pozdravi: "Razumem p
     affirm: ['Da, naravno.', 'Tako je...', 'Upravo tako...', 'Tacno...'],
   },
   cachedPhrases: {
-    intro: 'Dobar dan, ovde Vesna iz Step Tu Džob-a.',
+    intro: 'Dobar dan, ovdje Vesna iz Step Tu Džob-a.',
     repeat: 'Mozete li da ponovite, molim vas?',
     goodbye: 'Razumem potpuno. Ako se situacija promeni, tu smo. Prijatno!',
     still_there: 'Jeste li jos tu?',
