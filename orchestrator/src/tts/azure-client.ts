@@ -27,18 +27,19 @@ export function buildSSML(text: string, language: Language, voice: string): stri
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
 
-  // Inject English language tag for brand names so Azure TTS pronounces
-  // them in English regardless of the surrounding language (bs-BA or sr-RS).
+  // Replace "Step2Job" with a phonetic alias so the Bosnian/Serbian neural
+  // voice reads it intelligibly. The <sub> element substitutes the spoken
+  // text without affecting the displayed/logged text.
   const brandInjected = escaped.replace(
     /\bStep2Job\b/gi,
-    '<lang xml:lang="en-US">Step2Job</lang>',
+    '<sub alias="Step Tu Džob">Step2Job</sub>',
   );
 
   return [
     `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="http://www.w3.org/2001/mstts" xml:lang="${language}">`,
     `  <voice name="${voice}">`,
     `    <mstts:express-as style="customerservice">`,
-    `      <prosody rate="+3%" pitch="+1%">`,
+    `      <prosody rate="-5%" pitch="+1%">`,
     `        ${brandInjected}`,
     `      </prosody>`,
     `    </mstts:express-as>`,
