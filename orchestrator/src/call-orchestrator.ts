@@ -244,7 +244,11 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
       // 10. Send initial greeting — 800ms pause simulates human pickup
       await new Promise(resolve => setTimeout(resolve, 800));
+      this.isBotSpeaking = true;
+      this.turnTakingManager?.setBotSpeaking(true);
       await this.sendGreeting();
+      this.isBotSpeaking = false;
+      this.turnTakingManager?.setBotSpeaking(false);
 
       logger.info(
         {
@@ -866,6 +870,12 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       });
 
       let firstTokenReceived = false;
+
+      // State machine to extract only reply_text from streaming JSON
+      let jsonTTSBuffer = '';
+      let jsonTTSState: 'seeking' | 'in_value' | 'done' = 'seeking';
+      let jsonTTSEscaped = false;
+
       let result = await generator.next();
 
       while (!result.done) {
@@ -883,8 +893,35 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
           );
         }
 
-        // Feed token to TTS pipeline
-        this.currentTTSPipeline?.addTokens(token);
+        // Feed only the reply_text value from the JSON response to TTS.
+        // The LLM streams raw JSON tokens — we must skip keys/syntax.
+        for (const ch of token) {
+          jsonTTSBuffer += ch;
+
+          if (jsonTTSState === 'done') continue;
+
+          if (jsonTTSState === 'seeking') {
+            const match = jsonTTSBuffer.match(/"reply_text"\s*:\s*"([\s\S]*)$/);
+            if (match) {
+              jsonTTSState = 'in_value';
+              const captured = match[1] ?? '';
+              jsonTTSBuffer = '';
+              if (captured) this.currentTTSPipeline?.addTokens(captured);
+            }
+          } else if (jsonTTSState === 'in_value') {
+            if (jsonTTSEscaped) {
+              const unescaped = ch === 'n' ? '\n' : ch === 't' ? '\t' : ch;
+              this.currentTTSPipeline?.addTokens(unescaped);
+              jsonTTSEscaped = false;
+            } else if (ch === '\\') {
+              jsonTTSEscaped = true;
+            } else if (ch === '"') {
+              jsonTTSState = 'done';
+            } else {
+              this.currentTTSPipeline?.addTokens(ch);
+            }
+          }
+        }
 
         result = await generator.next();
       }
