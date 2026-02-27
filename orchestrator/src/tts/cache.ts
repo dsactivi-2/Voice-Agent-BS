@@ -18,8 +18,8 @@ const STANDARD_PHRASES: Record<string, Record<Language, string>> = {
     'sr-RS': 'Dobar dan, Goran ovdje iz Step Tu Džob-a.',
   },
   intro_sr: {
-    'bs-BA': 'Dobar dan! Ovde Vesna iz Step Tu Džob-a.',
-    'sr-RS': 'Dobar dan! Ovde Vesna iz Step Tu Džob-a.',
+    'bs-BA': 'Dobar dan, ovde Vesna iz Step Tu Džob-a.',
+    'sr-RS': 'Dobar dan, ovde Vesna iz Step Tu Džob-a.',
   },
   // Repeat phrases — must match agent cachedPhrases.repeat
   repeat_bs: {
