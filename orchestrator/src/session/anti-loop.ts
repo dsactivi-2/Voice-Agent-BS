@@ -15,6 +15,22 @@ function buildKey(phoneNumber: string): string {
 }
 
 /**
+ * Returns true when the phone number is in the ANTI_LOOP_BYPASS_NUMBERS list.
+ * Bypass numbers are normalised (non-alphanumeric stripped) before comparison
+ * so format differences (+1-555, +1555, etc.) do not cause mismatches.
+ */
+function isBypassNumber(phoneNumber: string): boolean {
+  const raw = config.ANTI_LOOP_BYPASS_NUMBERS.trim();
+  if (raw.length === 0) return false;
+
+  const normalised = phoneNumber.replace(/\W/g, '');
+  return raw
+    .split(',')
+    .map((n) => n.trim().replace(/\W/g, ''))
+    .includes(normalised);
+}
+
+/**
  * Checks whether calling the given phone number is currently allowed.
  * Returns false if a cooldown record exists in Redis, true otherwise.
  *
@@ -22,6 +38,11 @@ function buildKey(phoneNumber: string): string {
  * @returns true when the number may be called; false when blocked by cooldown
  */
 export async function canCallNumber(phoneNumber: string): Promise<boolean> {
+  if (isBypassNumber(phoneNumber)) {
+    logger.info({ phoneNumber }, 'Anti-loop bypassed — number is on the bypass list');
+    return true;
+  }
+
   const key = buildKey(phoneNumber);
   try {
     const value = await redis.get(key);
@@ -51,6 +72,11 @@ export async function canCallNumber(phoneNumber: string): Promise<boolean> {
  * @param phoneNumber - E.164 or any phone number string
  */
 export async function markCallMade(phoneNumber: string): Promise<void> {
+  if (isBypassNumber(phoneNumber)) {
+    logger.info({ phoneNumber }, 'Anti-loop markCallMade skipped — number is on the bypass list');
+    return;
+  }
+
   const key = buildKey(phoneNumber);
   const ttlSeconds = config.ANTI_LOOP_COOLDOWN_HOURS * 3_600;
 

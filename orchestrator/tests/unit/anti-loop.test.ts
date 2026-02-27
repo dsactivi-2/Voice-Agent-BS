@@ -6,12 +6,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // reference these variables safely inside the factory even though vi.mock() is
 // hoisted to the top of the module by Vitest's transform.
 
-const { mockGet, mockSet, mockTtl, mockQuit, mockOn } = vi.hoisted(() => ({
+const { mockGet, mockSet, mockTtl, mockQuit, mockOn, mockConfig } = vi.hoisted(() => ({
   mockGet: vi.fn(),
   mockSet: vi.fn(),
   mockTtl: vi.fn(),
   mockQuit: vi.fn(),
   mockOn: vi.fn(),
+  mockConfig: {
+    ANTI_LOOP_COOLDOWN_HOURS: 24,
+    TTS_CACHE_TTL_SECONDS: 86400,
+    ANTI_LOOP_BYPASS_NUMBERS: '',
+  },
 }));
 
 // ── ioredis mock ──────────────────────────────────────────────────────────────
@@ -34,10 +39,7 @@ vi.mock('ioredis', () => {
 // ── Config + logger mocks ─────────────────────────────────────────────────────
 
 vi.mock('../../src/config.js', () => ({
-  config: {
-    ANTI_LOOP_COOLDOWN_HOURS: 24,
-    TTS_CACHE_TTL_SECONDS: 86400,
-  },
+  config: mockConfig,
 }));
 
 vi.mock('../../src/utils/logger.js', () => ({
@@ -168,5 +170,70 @@ describe('markCallMade', () => {
 
     const expectedKey = `anti-loop:cooldown:${phoneWithParens.replace(/\W/g, '')}`;
     expect(mockSet).toHaveBeenCalledWith(expectedKey, '1', 'EX', 24 * 3600);
+  });
+});
+
+// ── Bypass list ───────────────────────────────────────────────────────────────
+
+describe('bypass list', () => {
+  const BYPASS_PHONE = '+14155550100';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockConfig.ANTI_LOOP_BYPASS_NUMBERS = '';
+    // Default Redis behaviour: no cooldown (not blocked).
+    // Must be set after clearAllMocks because clearAllMocks resets the once-queue.
+    mockGet.mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    mockConfig.ANTI_LOOP_BYPASS_NUMBERS = '';
+  });
+
+  it('canCallNumber returns true for a bypassed number without hitting Redis', async () => {
+    mockConfig.ANTI_LOOP_BYPASS_NUMBERS = BYPASS_PHONE;
+    // Even if Redis would say blocked, bypass takes precedence
+    mockGet.mockResolvedValueOnce('1');
+
+    const result = await canCallNumber(BYPASS_PHONE);
+
+    expect(result).toBe(true);
+    expect(mockGet).not.toHaveBeenCalled();
+  });
+
+  it('markCallMade skips Redis write for a bypassed number', async () => {
+    mockConfig.ANTI_LOOP_BYPASS_NUMBERS = BYPASS_PHONE;
+
+    await markCallMade(BYPASS_PHONE);
+
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+
+  it('accepts multiple bypass numbers separated by commas', async () => {
+    const second = '+4915123456789';
+    mockConfig.ANTI_LOOP_BYPASS_NUMBERS = `${BYPASS_PHONE},${second}`;
+
+    expect(await canCallNumber(BYPASS_PHONE)).toBe(true);
+    expect(await canCallNumber(second)).toBe(true);
+    expect(mockGet).not.toHaveBeenCalled();
+  });
+
+  it('normalises bypass numbers so format differences still match', async () => {
+    // Stored with dashes, incoming without
+    mockConfig.ANTI_LOOP_BYPASS_NUMBERS = '+1-415-555-0100';
+
+    const result = await canCallNumber('+14155550100');
+
+    expect(result).toBe(true);
+    expect(mockGet).not.toHaveBeenCalled();
+  });
+
+  it('empty ANTI_LOOP_BYPASS_NUMBERS bypasses nobody', async () => {
+    mockConfig.ANTI_LOOP_BYPASS_NUMBERS = '';
+    mockGet.mockResolvedValueOnce(null);
+
+    await canCallNumber(BYPASS_PHONE);
+
+    expect(mockGet).toHaveBeenCalledOnce();
   });
 });

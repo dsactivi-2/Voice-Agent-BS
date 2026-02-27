@@ -73,6 +73,10 @@ const envSchema = z.object({
 
   // Anti-Loop
   ANTI_LOOP_COOLDOWN_HOURS: z.coerce.number().int().positive().default(24),
+  /** Comma-separated phone numbers (E.164) that bypass the anti-loop check.
+   *  Use this for automated test callers (e.g. Bland.ai) so they can call
+   *  repeatedly without hitting the 24-hour cooldown. */
+  ANTI_LOOP_BYPASS_NUMBERS: z.string().default(''),
 
   // Ring Buffer
   RING_BUFFER_SIZE_KB: z.coerce.number().int().positive().default(32),
