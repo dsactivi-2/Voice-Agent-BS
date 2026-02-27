@@ -522,6 +522,11 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
   private async handleUserFinishedSpeaking(transcript: string): Promise<void> {
     if (this.stopped || !this.session || !this.memoryManager) return;
 
+    // Capture references now — the call may stop (setting this.session = null)
+    // while we are suspended at an await point below.
+    const session = this.session;
+    const memoryManager = this.memoryManager;
+
     // Guard against concurrent turn processing
     if (this.isProcessingTurn) {
       logger.warn(
@@ -550,7 +555,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
           callId: this.callId,
           turn: currentTurn,
           transcript: trimmedTranscript,
-          phase: this.session.phase,
+          phase: session.phase,
         },
         'Processing user turn',
       );
@@ -561,24 +566,24 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         turnNumber: currentTurn,
         speaker: 'user',
         text: trimmedTranscript,
-        llmMode: this.session.llmMode,
+        llmMode: session.llmMode,
         timestamp: new Date(),
       };
-      this.memoryManager.addTurn(userTurn);
+      memoryManager.addTurn(userTurn);
 
       // 1. Select and play filler if needed
       await this.maybePlayFiller(trimmedTranscript);
 
       // 2. Check if call duration forces close
-      if (checkCallDuration(this.session)) {
-        this.session.phase = 'close';
+      if (checkCallDuration(session)) {
+        session.phase = 'close';
         this.turnTakingManager?.setPhase('close');
       }
 
       // 3. Check LLM switch logic
-      if (shouldSwitchToFull(this.session)) {
-        const previousMode = this.session.llmMode;
-        this.session.llmMode = 'full';
+      if (shouldSwitchToFull(session)) {
+        const previousMode = session.llmMode;
+        session.llmMode = 'full';
         this.emit('llmSwitched', previousMode, 'full');
         logger.info(
           { callId: this.callId, from: previousMode, to: 'full' },
@@ -602,22 +607,22 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
           turnNumber: currentTurn,
           speaker: 'user',
           text: trimmedTranscript,
-          llmMode: this.session!.llmMode,
+          llmMode: session.llmMode,
         }),
       );
 
       // 7. Update session turn count
-      this.session.turnCount = this.turnCounter;
+      session.turnCount = this.turnCounter;
 
-      this.emit('turnCompleted', currentTurn, this.session.phase);
+      this.emit('turnCompleted', currentTurn, session.phase);
 
       logger.info(
         {
           callId: this.callId,
           turn: currentTurn,
-          phase: this.session.phase,
+          phase: session.phase,
           latencyMs: totalLatencyMs,
-          llmMode: this.session.llmMode,
+          llmMode: session.llmMode,
         },
         'Turn completed',
       );
