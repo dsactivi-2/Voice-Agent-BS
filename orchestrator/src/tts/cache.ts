@@ -146,35 +146,43 @@ export async function warmTTSCache(synthesizeFn: SynthesizeFn): Promise<void> {
   );
 
   const languages: Language[] = ['bs-BA', 'sr-RS'];
-  const tasks: Array<Promise<void>> = [];
 
-  for (const [phraseKey, languageMap] of Object.entries(STANDARD_PHRASES)) {
+  // Build list of (phraseKey, language, text, cacheKey) tuples, intro first
+  const entries: Array<{ phraseKey: string; language: Language; text: string; cacheKey: string }> = [];
+
+  // Ensure intro phrases are synthesized first (critical path for first call)
+  const phraseEntries = Object.entries(STANDARD_PHRASES).sort(([a], [b]) =>
+    a.startsWith('intro') ? -1 : b.startsWith('intro') ? 1 : 0,
+  );
+
+  for (const [phraseKey, languageMap] of phraseEntries) {
     for (const language of languages) {
-      const text = languageMap[language];
-      const cacheKey = `${phraseKey}:${language}`;
-
-      tasks.push(
-        (async () => {
-          try {
-            // Skip if already cached
-            const existing = await getCachedAudio(cacheKey);
-            if (existing !== null) {
-              logger.debug({ phraseKey, language }, 'TTS phrase already cached — skipping');
-              return;
-            }
-
-            const audio = await synthesizeFn(text, language);
-            await setCachedAudio(cacheKey, audio);
-            logger.debug({ phraseKey, language, bytes: audio.byteLength }, 'TTS phrase warmed');
-          } catch (err) {
-            logger.warn({ err, phraseKey, language }, 'Failed to warm TTS phrase — continuing');
-          }
-        })(),
-      );
+      entries.push({ phraseKey, language, text: languageMap[language], cacheKey: `${phraseKey}:${language}` });
     }
   }
 
-  await Promise.allSettled(tasks);
+  // Process in batches of 3 to avoid overwhelming Azure TTS with concurrent connections
+  const BATCH_SIZE = 3;
+  for (let i = 0; i < entries.length; i += BATCH_SIZE) {
+    const batch = entries.slice(i, i + BATCH_SIZE);
+    await Promise.allSettled(
+      batch.map(async ({ phraseKey, language, text, cacheKey }) => {
+        try {
+          const existing = await getCachedAudio(cacheKey);
+          if (existing !== null) {
+            logger.debug({ phraseKey, language }, 'TTS phrase already cached — skipping');
+            return;
+          }
+          const audio = await synthesizeFn(text, language);
+          await setCachedAudio(cacheKey, audio);
+          logger.debug({ phraseKey, language, bytes: audio.byteLength }, 'TTS phrase warmed');
+        } catch (err) {
+          logger.warn({ err, phraseKey, language }, 'Failed to warm TTS phrase — continuing');
+        }
+      }),
+    );
+  }
+
   logger.info('TTS cache warm-up complete');
 }
 
