@@ -189,10 +189,27 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         this.agentConfig.deepgramLanguage as DeepgramLanguage,
         config.DEEPGRAM_API_KEY,
       );
+      // Replay the ring buffer into Deepgram once it connects so audio buffered
+      // during the handshake is not lost.
+      const replayRingBuffer = () => {
+        const available = this.ringBuffer?.available ?? 0;
+        if (available > 0 && this.ringBuffer) {
+          const buffered = this.ringBuffer.read(available);
+          if (buffered) {
+            logger.info(
+              { callId: this.callId, bytes: buffered.length },
+              'Deepgram connected — replaying buffered audio',
+            );
+            this.asrClient?.sendAudio(buffered);
+          }
+        }
+      };
+
       // Non-blocking: greeting plays immediately while DG handshakes in background
-      this.asrClient.connect().catch((error) => {
+      this.asrClient.connect().then(replayRingBuffer).catch((error) => {
         logger.error({ err: error, callId: this.callId }, 'Deepgram ASR failed to connect');
       });
+      this.asrClient.on('reconnected', replayRingBuffer);
       this.asrClient.on('transcript', (event) => {
         if (event.isFinal) {
           logger.info(
