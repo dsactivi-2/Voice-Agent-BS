@@ -62,7 +62,7 @@ describe('buildAnswerNcco', () => {
       endpoint: [
         {
           type: 'websocket',
-          uri: 'wss://voice.activi.io/vonage/media',
+          uri: 'wss://voice.activi.io/vonage/media?call_id=test-call-id-123',
           'content-type': 'audio/l16;rate=16000',
           headers: {
             call_id: 'test-call-id-123',
@@ -76,7 +76,7 @@ describe('buildAnswerNcco', () => {
     const ncco = buildAnswerNcco('uuid-abc', 'custom-host.example.com');
 
     const connectAction = ncco[0] as { action: string; endpoint: Array<{ uri: string }> };
-    expect(connectAction.endpoint[0]!.uri).toBe('wss://custom-host.example.com/vonage/media');
+    expect(connectAction.endpoint[0]!.uri).toBe('wss://custom-host.example.com/vonage/media?call_id=uuid-abc');
   });
 
   it('should set audio content type to 16kHz PCM', () => {
@@ -124,7 +124,7 @@ describe('createAnswerHandler', () => {
           endpoint: expect.arrayContaining([
             expect.objectContaining({
               type: 'websocket',
-              uri: 'wss://voice.activi.io/vonage/media',
+              uri: expect.stringContaining('wss://voice.activi.io/vonage/media'),
             }),
           ]),
         }),

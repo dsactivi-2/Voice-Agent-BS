@@ -112,6 +112,7 @@ export async function createCall(params: CreateCallParams): Promise<void> {
   const sql = `
     INSERT INTO calls (call_id, phone_number, language, campaign_id, ab_group, llm_mode_final)
     VALUES ($1, $2, $3, $4, $5, $6)
+    ON CONFLICT (call_id) DO NOTHING
   `;
 
   try {

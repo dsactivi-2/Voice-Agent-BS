@@ -71,7 +71,7 @@ type NccoAction = NccoConnectAction | NccoTalkAction;
  */
 export function buildAnswerNcco(callId: string, baseUrl: string): NccoAction[] {
   const wsProtocol = 'wss';
-  const wsUri = `${wsProtocol}://${baseUrl}/vonage/media`;
+  const wsUri = `${wsProtocol}://${baseUrl}/vonage/media?call_id=${encodeURIComponent(callId)}`;
 
   return [
     {

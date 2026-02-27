@@ -41,14 +41,16 @@ export async function* streamLLMResponse(
   params: LLMRequestParams,
 ): AsyncGenerator<string, LLMResponse> {
   const stream = await Promise.race([
-    openai.chat.completions.create({
-      model: params.model,
-      messages: params.messages,
-      max_tokens: params.maxTokens,
-      response_format: { type: 'json_object' },
-      stream: true,
-      ...(params.signal ? { signal: params.signal } : {}),
-    }),
+    openai.chat.completions.create(
+      {
+        model: params.model,
+        messages: params.messages,
+        max_tokens: params.maxTokens,
+        response_format: { type: 'json_object' },
+        stream: true,
+      },
+      params.signal ? { signal: params.signal } : undefined,
+    ),
     createTimeoutPromise(config.LLM_TIMEOUT_MS),
   ]);
 

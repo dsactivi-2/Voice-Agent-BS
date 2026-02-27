@@ -242,6 +242,7 @@ describe('getLLMResponseWithFallback', () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ model: 'gpt-4o' }),
+      undefined,
     );
   });
 });

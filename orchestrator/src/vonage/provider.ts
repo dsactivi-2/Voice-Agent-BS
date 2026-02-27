@@ -80,8 +80,10 @@ export class VonageProvider implements TelephonyProvider {
     app.post('/vonage/events', eventHandler);
 
     // WebSocket /vonage/media — Real-time audio streaming
-    app.get('/vonage/media', { websocket: true }, (socket, _req) => {
-      this.handleMediaWebSocket(socket);
+    app.get('/vonage/media', { websocket: true }, (socket, req) => {
+      const qs = req.query as Record<string, string | undefined>;
+      const callIdFromQuery = qs['call_id'];
+      this.handleMediaWebSocket(socket, callIdFromQuery);
     });
 
     logger.info('Vonage routes registered: /vonage/answer, /vonage/events, /vonage/media');
@@ -242,14 +244,19 @@ export class VonageProvider implements TelephonyProvider {
   // WebSocket media handler
   // -------------------------------------------------------------------------
 
-  private handleMediaWebSocket(socket: import('ws').WebSocket): void {
-    logger.info('Vonage media WebSocket connected');
+  private handleMediaWebSocket(socket: import('ws').WebSocket, callIdOverride?: string): void {
+    logger.info({ callIdOverride }, 'Vonage media WebSocket connected');
     const wsConnectedAt = Date.now();
 
     const session = new VonageMediaSession(socket);
 
+    // Effective callId: prefer what Vonage sends in WS headers; fall back to
+    // the query-param value we embedded in the NCCO WebSocket URI.
+    let effectiveCallId = callIdOverride ?? 'unknown';
+
     session.on('start', (info) => {
-      const { callId } = info;
+      const callId = info.callId !== 'unknown' ? info.callId : effectiveCallId;
+      effectiveCallId = callId;
       logger.info({ callId, timeToMediaReadyMs: Date.now() - wsConnectedAt }, 'Vonage media session started — firing onMediaSessionReady');
       this.activeSessions.set(callId, session);
 
@@ -265,14 +272,14 @@ export class VonageProvider implements TelephonyProvider {
     });
 
     session.on('stop', (info) => {
-      const { callId } = info;
+      const callId = info.callId !== 'unknown' ? info.callId : effectiveCallId;
       logger.info({ callId }, 'Vonage media session stopped');
       this.activeSessions.delete(callId);
       decrementActiveCalls();
     });
 
     session.on('error', (error) => {
-      const callId = session.getCallId();
+      const callId = session.getCallId() ?? effectiveCallId;
       logger.error(
         { err: error, callId },
         'Vonage media session error',
