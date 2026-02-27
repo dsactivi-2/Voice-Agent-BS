@@ -322,7 +322,7 @@ describe('POST /knowledge-bases/:id/documents (text)', () => {
   });
 
   it('returns 400 when source_type=text but content missing', async () => {
-    queryMock.mockResolvedValueOnce({ rows: [{ id: KB_ID }], rowCount: 1 } as never);
+    // Route validates content before reaching DB — no mock needed
     const res = await app.inject({
       method: 'POST', url: `/knowledge-bases/${KB_ID}/documents`,
       body: { source_type: 'text' }, // missing content
@@ -332,7 +332,7 @@ describe('POST /knowledge-bases/:id/documents (text)', () => {
   });
 
   it('returns 400 when source_type=url but source_url missing', async () => {
-    queryMock.mockResolvedValueOnce({ rows: [{ id: KB_ID }], rowCount: 1 } as never);
+    // Route validates source_url before reaching DB — no mock needed
     const res = await app.inject({
       method: 'POST', url: `/knowledge-bases/${KB_ID}/documents`,
       body: { source_type: 'url' }, // missing source_url

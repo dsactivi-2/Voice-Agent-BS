@@ -65,6 +65,12 @@ beforeAll(() => {
   // Intentionally empty — env vars are set at module level above.
 });
 
+// Reset all mock call history and queued return values before each test
+// so unconsumed mockResolvedValueOnce calls don't bleed into subsequent tests.
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
 afterAll(() => {
   vi.restoreAllMocks();
 });
