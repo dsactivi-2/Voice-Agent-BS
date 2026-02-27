@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { logger } from '../utils/logger.js';
 import { synthesizeSpeech } from './azure-client.js';
 import { getCachedAudio, setCachedAudio } from './cache.js';
+import { cleanForTTS } from './clean.js';
 import type { Language } from '../types.js';
 
 /** Only sentence-ending punctuation triggers a chunk flush.
@@ -177,10 +178,12 @@ export class ChunkedTTSPipeline extends EventEmitter<ChunkedTTSPipelineEvents> {
    * Extracts the current buffer contents and submits the text for synthesis.
    */
   private flushBuffer(): void {
-    const text = this.buffer.trim();
+    const raw = this.buffer.trim();
     this.buffer = '';
     this.lastFlushAt = Date.now();
     this.clearFlushTimer();
+
+    const text = cleanForTTS(raw);
 
     if (text.length === 0) return;
 

@@ -23,6 +23,13 @@ const envSchema = z.object({
 
   // Auth
   BCRYPT_ROUNDS: z.coerce.number().int().positive().default(12),
+
+  // OpenAI (embeddings for KB/RAG)
+  OPENAI_API_KEY: z.string().min(1),
+
+  // KB chunking defaults
+  KB_CHUNK_SIZE: z.coerce.number().int().positive().default(500),   // target tokens per chunk
+  KB_CHUNK_OVERLAP: z.coerce.number().int().min(0).default(50),     // overlap in tokens
 });
 
 function loadConfig() {

@@ -41,7 +41,9 @@ voice.activi.io {
     }
 
     # Management API — all /api/manage/* routes
+    # Strip the /api/manage prefix so management-api receives clean paths
     handle /api/manage/* {
+        uri strip_prefix /api/manage
         reverse_proxy management-api:3001
     }
 

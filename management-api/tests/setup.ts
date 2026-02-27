@@ -14,6 +14,7 @@ process.env['JWT_REFRESH_TTL'] = '7d';
 process.env['PORT'] = '3099';
 process.env['LOG_LEVEL'] = 'error'; // valid pino level — suppress most output during tests
 process.env['BCRYPT_ROUNDS'] = '4'; // Fast rounds for tests
+process.env['OPENAI_API_KEY'] = 'sk-test-not-real-key-for-unit-tests-only';
 
 // ─── pg Pool mock ─────────────────────────────────────────────────────────────
 // Mock the entire pool module so no real DB connection is attempted.

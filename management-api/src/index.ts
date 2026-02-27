@@ -39,6 +39,9 @@ async function main(): Promise<void> {
 
   const { authRoutes, setRedisClient } = await import('./auth/routes.js');
   const { healthRoutes } = await import('./routes/health.js');
+  const { agentRoutes } = await import('./routes/agents.js');
+  const { promptRoutes } = await import('./routes/prompts.js');
+  const { knowledgeBaseRoutes } = await import('./routes/knowledge-bases.js');
 
   // Configure Redis for auth routes
   try {
@@ -51,6 +54,9 @@ async function main(): Promise<void> {
 
   await fastify.register(authRoutes);
   await fastify.register(healthRoutes);
+  await fastify.register(agentRoutes);
+  await fastify.register(promptRoutes);
+  await fastify.register(knowledgeBaseRoutes);
 
   // ── Global error handler ──────────────────────────────────────────────────
 
