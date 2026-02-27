@@ -18,6 +18,7 @@ const envSchema = z.object({
   VONAGE_APPLICATION_ID: z.string().optional(),
   VONAGE_PRIVATE_KEY_PATH: z.string().optional(),
   VONAGE_PHONE_NUMBER: z.string().optional(),
+  VONAGE_SIGNATURE_SECRET: z.string().optional(),
 
   // Deepgram
   DEEPGRAM_API_KEY: z.string().min(1),

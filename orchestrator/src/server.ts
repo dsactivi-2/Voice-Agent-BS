@@ -5,6 +5,7 @@ import { pinoHttp } from 'pino-http';
 import { logger } from './utils/logger.js';
 import { config } from './config.js';
 import { registerHealthRoute } from './health.js';
+import { registerMetricsRoute } from './metrics/prometheus.js';
 import { setupGracefulShutdown } from './graceful-shutdown.js';
 import { createTelephonyProvider } from './telephony/factory.js';
 import type { TelephonyEvents } from './telephony/provider.js';
@@ -95,10 +96,8 @@ export async function createServer(deps: ServerDependencies) {
     startedAt: Date.now(),
   });
 
-  // Prometheus metrics endpoint (placeholder — AP-16 will implement fully)
-  app.get('/metrics', async (_req, reply) => {
-    await reply.status(200).send('# Prometheus metrics will be added in AP-16\n');
-  });
+  // Prometheus metrics endpoint
+  registerMetricsRoute(app);
 
   // --- Telephony provider ---
   // Creates the configured telephony provider (telnyx or vonage) and

@@ -1,7 +1,44 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod/v4';
 import type { FastifyRequest, FastifyReply, RouteHandlerMethod } from 'fastify';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
+
+// ---------------------------------------------------------------------------
+// Vonage SHA-256 HMAC JWT signature verification
+// ---------------------------------------------------------------------------
+
+/**
+ * Verifies a Vonage signed webhook JWT.
+ * Vonage adds `Authorization: Bearer <jwt>` where the JWT is signed with
+ * HMAC-SHA256 using the application's signing secret.
+ *
+ * @param authHeader - Raw Authorization header value
+ * @param secret     - Vonage signing secret from dashboard
+ * @returns true if the signature is valid, false otherwise
+ */
+function verifyVonageSignature(authHeader: string | undefined, secret: string): boolean {
+  if (!authHeader?.startsWith('Bearer ')) return false;
+  const token = authHeader.slice(7);
+  // JWT = header.payload.signature — signing input is everything before last dot
+  const lastDot = token.lastIndexOf('.');
+  if (lastDot === -1) return false;
+  const signingInput = token.slice(0, lastDot);
+  const receivedSig = token.slice(lastDot + 1);
+
+  const expectedSig = createHmac('sha256', secret)
+    .update(signingInput)
+    .digest('base64url');
+
+  try {
+    return timingSafeEqual(
+      Buffer.from(receivedSig, 'base64url'),
+      Buffer.from(expectedSig, 'base64url'),
+    );
+  } catch {
+    return false;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Zod schemas for Vonage webhook payloads
@@ -21,12 +58,17 @@ const vonageEventPayloadSchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
   duration: z.string().optional(),
-  start_time: z.string().optional(),
+  // These are null (not undefined) in "answered" events — use nullish()
+  start_time: z.string().nullish(),
   end_time: z.string().optional(),
-  rate: z.string().optional(),
+  rate: z.string().nullish(),
   price: z.string().optional(),
-  network: z.string().optional(),
+  network: z.string().nullish(),
   reason: z.string().optional(),
+  // Additional fields sent in some event types
+  sip_code: z.number().optional(),
+  detail: z.string().optional(),
+  disconnected_by: z.string().optional(),
 });
 
 export type VonageEventPayload = z.infer<typeof vonageEventPayloadSchema>;
@@ -155,6 +197,16 @@ export function createEventHandler(callbacks?: VonageWebhookCallbacks): RouteHan
     request: FastifyRequest,
     reply: FastifyReply,
   ): Promise<void> {
+    // --- Signature verification (POST only) ---
+    if (request.method === 'POST' && config.VONAGE_SIGNATURE_SECRET) {
+      const authHeader = request.headers['authorization'] as string | undefined;
+      if (!verifyVonageSignature(authHeader, config.VONAGE_SIGNATURE_SECRET)) {
+        logger.warn({ ip: request.ip }, 'Vonage webhook signature verification failed');
+        await reply.status(401).send({ error: 'Unauthorized' });
+        return;
+      }
+    }
+
     // --- Body validation ---
     // Vonage sends call events as GET (query params) or POST (JSON body)
     const rawPayload = (request.method === 'GET')
