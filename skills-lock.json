@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "skills": {
+    "shadcn-ui-expert": {
+      "source": "majesteitbart/talentmatcher",
+      "sourceType": "github",
+      "computedHash": "969ad2b851208dedb57a59eadd52fc86a8a8bf6bcb728c660c82dfa2045c8e90"
+    },
+    "tanstack-query-best-practices": {
+      "source": "deckardger/tanstack-agent-skills",
+      "sourceType": "github",
+      "computedHash": "21d2e8b7468a81d772b6527ad8ca178cc2f3f08af777bb9061333013ee88a0c9"
+    },
+    "tanstack-table": {
+      "source": "secondsky/claude-skills",
+      "sourceType": "github",
+      "computedHash": "448baa920da11eba1b46d818135940627cd3f118dde340a6db9479d7bf5f5cea"
+    }
+  }
+}
