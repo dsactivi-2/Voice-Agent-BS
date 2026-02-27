@@ -3,6 +3,18 @@ import type { WebSocket } from 'ws';
 import { logger } from '../utils/logger.js';
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/**
+ * Vonage WebSocket audio frame size in bytes.
+ * 640 bytes = 20 ms of Linear PCM 16-bit 16kHz mono audio.
+ * Vonage requires audio to be sent in fixed-size frames; sending a single
+ * large buffer causes the excess data to be silently discarded.
+ */
+export const VONAGE_FRAME_BYTES = 640;
+
+// ---------------------------------------------------------------------------
 // Event types emitted by VonageMediaSession
 // ---------------------------------------------------------------------------
 
@@ -67,8 +79,15 @@ export class VonageMediaSession extends EventEmitter<VonageMediaStreamEvents> {
 
   /**
    * Sends raw PCM audio back to the caller via the Vonage WebSocket.
-   * Vonage expects raw binary PCM frames (16kHz 16-bit mono) with no
-   * additional framing or encoding.
+   *
+   * Vonage requires audio to be delivered as individual 640-byte frames
+   * (20 ms of Linear PCM 16-bit 16kHz mono audio). Sending a single large
+   * buffer causes Vonage to silently discard everything beyond its internal
+   * frame buffer, resulting in truncated/swallowed speech.
+   *
+   * This method splits `audioBuffer` into VONAGE_FRAME_BYTES-sized chunks and
+   * sends each as a separate WebSocket binary message. The last chunk may be
+   * smaller than VONAGE_FRAME_BYTES and is sent as-is.
    *
    * @param audioBuffer - Raw PCM audio buffer (16kHz 16-bit mono)
    */
@@ -82,7 +101,10 @@ export class VonageMediaSession extends EventEmitter<VonageMediaStreamEvents> {
     }
 
     try {
-      this.ws.send(audioBuffer);
+      for (let offset = 0; offset < audioBuffer.length; offset += VONAGE_FRAME_BYTES) {
+        const frame = audioBuffer.subarray(offset, offset + VONAGE_FRAME_BYTES);
+        this.ws.send(frame);
+      }
     } catch (err) {
       logger.error(
         { err, callId: this.callId },
