@@ -355,7 +355,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
    */
   private async sendGreeting(): Promise<number> {
     const introText = this.agentConfig.cachedPhrases?.['intro'];
-    if (!introText || this.stopped || !this.mediaSession.isOpen()) return;
+    if (!introText || this.stopped || !this.mediaSession.isOpen()) return 0;
 
     try {
       // Try Redis cache first (populated by warmup at startup)
