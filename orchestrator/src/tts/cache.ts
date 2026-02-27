@@ -18,8 +18,8 @@ const STANDARD_PHRASES: Record<string, Record<Language, string>> = {
     'sr-RS': 'Dobar dan, Goran ovdje iz Step Tu Džob-a.',
   },
   intro_sr: {
-    'bs-BA': 'Dobar dan! Moje ime je Nikola iz firme Step Tu Džob.',
-    'sr-RS': 'Dobar dan! Moje ime je Nikola iz firme Step Tu Džob.',
+    'bs-BA': 'Dobar dan! Ovde Vesna iz Step2Job-a.',
+    'sr-RS': 'Dobar dan! Ovde Vesna iz Step2Job-a.',
   },
   // Repeat phrases — must match agent cachedPhrases.repeat
   repeat_bs: {
@@ -36,8 +36,8 @@ const STANDARD_PHRASES: Record<string, Record<Language, string>> = {
     'sr-RS': 'Razumijem potpuno. Ako se situacija promijeni, tu smo. Prijatno!',
   },
   goodbye_sr: {
-    'bs-BA': 'Hvala vam na vremenu. Dovidjenja!',
-    'sr-RS': 'Hvala vam na vremenu. Dovidjenja!',
+    'bs-BA': 'Razumem potpuno. Ako se situacija promeni, tu smo. Prijatno!',
+    'sr-RS': 'Razumem potpuno. Ako se situacija promeni, tu smo. Prijatno!',
   },
   // Silence check phrases — must match agent cachedPhrases.still_there
   still_there_bs: {
