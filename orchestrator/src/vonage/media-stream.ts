@@ -60,14 +60,6 @@ export class VonageMediaSession extends EventEmitter<VonageMediaStreamEvents> {
   private closed = false;
   private readonly connectedAt = Date.now();
 
-  // ── Rate-limited audio output queue ──────────────────────────────
-  // Vonage requires audio delivered at real-time rate (one 640-byte frame
-  // every 20ms). Sending frames in a tight loop overflows Vonage's internal
-  // buffer and causes frames to be silently discarded (words swallowed).
-  private readonly audioQueue: Buffer[] = [];
-  private pacerTimer: ReturnType<typeof setInterval> | null = null;
-  private static readonly FRAME_INTERVAL_MS = 20; // 20ms ≙ one 640-byte PCM frame
-
   constructor(ws: WebSocket, initialCallId?: string) {
     super();
     this.ws = ws;
@@ -86,16 +78,17 @@ export class VonageMediaSession extends EventEmitter<VonageMediaStreamEvents> {
   }
 
   /**
-   * Enqueues raw PCM audio for rate-limited delivery to the Vonage WebSocket.
+   * Sends raw PCM audio back to the caller via the Vonage WebSocket.
    *
-   * Vonage requires audio to be delivered as individual 640-byte frames at
-   * real-time rate (one frame every 20ms). Sending frames in a tight loop
-   * overflows Vonage's internal buffer, causing frames to be silently
-   * discarded and resulting in truncated/swallowed speech.
+   * Vonage requires audio to be delivered as individual 640-byte frames
+   * (20 ms of Linear PCM 16-bit 16kHz mono audio). Sending a single large
+   * buffer causes Vonage to silently discard everything beyond its internal
+   * frame buffer, resulting in truncated/swallowed speech.
    *
-   * This method splits `audioBuffer` into 640-byte frames and enqueues them.
-   * A setInterval pacer sends one frame every 20ms, matching Vonage's
-   * playback rate and preventing buffer overflow.
+   * Frames are sent as a burst (no artificial delay) — Vonage buffers them
+   * and plays at real-time rate on their end. A setInterval pacer was tested
+   * but caused audible micro-gaps due to Node.js timer jitter; burst-sending
+   * eliminates these gaps.
    *
    * @param audioBuffer - Raw PCM audio buffer (16kHz 16-bit mono)
    */
@@ -108,33 +101,35 @@ export class VonageMediaSession extends EventEmitter<VonageMediaStreamEvents> {
       return;
     }
 
-    // Split into 640-byte frames and enqueue
-    for (let offset = 0; offset < audioBuffer.length; offset += VONAGE_FRAME_BYTES) {
-      // Copy slice so subarray reference doesn't keep a large buffer alive
-      this.audioQueue.push(Buffer.from(audioBuffer.subarray(offset, offset + VONAGE_FRAME_BYTES)));
+    try {
+      for (let offset = 0; offset < audioBuffer.length; offset += VONAGE_FRAME_BYTES) {
+        const frame = audioBuffer.subarray(offset, offset + VONAGE_FRAME_BYTES);
+        this.ws.send(frame);
+      }
+    } catch (err) {
+      logger.error(
+        { err, callId: this.callId },
+        'Failed to send audio frame to Vonage',
+      );
+      this.emit('error', err instanceof Error ? err : new Error(String(err)));
     }
-
-    this.startPacer();
   }
 
   /**
-   * Clears all buffered (not yet sent) audio frames and stops the pacer.
-   * Call this on barge-in so the bot stops playing immediately.
+   * No-op — kept for MediaSession interface compatibility.
+   * With burst-sending there is no queue to clear; frames are sent immediately.
    */
   clearAudioQueue(): void {
-    this.audioQueue.length = 0;
-    this.stopPacer();
-    logger.debug({ callId: this.callId }, 'Vonage audio queue cleared');
+    // Nothing to clear with synchronous burst sending
   }
 
   /**
-   * Gracefully closes the WebSocket connection and stops the audio pacer.
+   * Gracefully closes the WebSocket connection.
    */
   close(): void {
     if (this.closed) return;
 
     this.closed = true;
-    this.clearAudioQueue();
 
     try {
       if (this.ws.readyState === this.ws.OPEN) {
@@ -142,40 +137,6 @@ export class VonageMediaSession extends EventEmitter<VonageMediaStreamEvents> {
       }
     } catch (err) {
       logger.error({ err, callId: this.callId }, 'Error closing Vonage WebSocket');
-    }
-  }
-
-  // ── Private: rate-limited pacer ──────────────────────────────────
-
-  private startPacer(): void {
-    if (this.pacerTimer !== null) return; // already running
-
-    this.pacerTimer = setInterval(() => {
-      if (this.audioQueue.length === 0) {
-        this.stopPacer();
-        return;
-      }
-
-      if (!this.isOpen()) {
-        this.stopPacer();
-        return;
-      }
-
-      const frame = this.audioQueue.shift()!;
-      try {
-        this.ws.send(frame);
-      } catch (err) {
-        logger.error({ err, callId: this.callId }, 'Failed to send audio frame to Vonage');
-        this.emit('error', err instanceof Error ? err : new Error(String(err)));
-        this.stopPacer();
-      }
-    }, VonageMediaSession.FRAME_INTERVAL_MS);
-  }
-
-  private stopPacer(): void {
-    if (this.pacerTimer !== null) {
-      clearInterval(this.pacerTimer);
-      this.pacerTimer = null;
     }
   }
 

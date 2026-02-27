@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import type { WebSocket } from 'ws';
 
@@ -32,15 +32,6 @@ async function load() {
 }
 
 // ---------------------------------------------------------------------------
-// Helper: advance the 20ms pacer until all queued frames are sent
-// ---------------------------------------------------------------------------
-
-function drainQueue(frameCount: number): void {
-  // Each frame is sent on a separate 20ms tick
-  vi.advanceTimersByTime(frameCount * 20 + 20);
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -52,14 +43,7 @@ describe('VONAGE_FRAME_BYTES', () => {
 });
 
 describe('VonageMediaSession.sendAudio', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
+  beforeEach(() => vi.clearAllMocks());
 
   it('sends a single 640-byte buffer as one frame', async () => {
     const { VonageMediaSession } = await load();
@@ -68,7 +52,6 @@ describe('VonageMediaSession.sendAudio', () => {
     const audio = Buffer.alloc(640, 0xab);
 
     session.sendAudio(audio);
-    drainQueue(1);
 
     expect(ws.send).toHaveBeenCalledTimes(1);
     expect((ws.send as ReturnType<typeof vi.fn>).mock.calls[0][0]).toHaveLength(640);
@@ -81,7 +64,6 @@ describe('VonageMediaSession.sendAudio', () => {
     const audio = Buffer.alloc(1920, 0x01);
 
     session.sendAudio(audio);
-    drainQueue(3);
 
     expect(ws.send).toHaveBeenCalledTimes(3);
     for (const call of (ws.send as ReturnType<typeof vi.fn>).mock.calls) {
@@ -97,7 +79,6 @@ describe('VonageMediaSession.sendAudio', () => {
     const audio = Buffer.alloc(1400, 0x02);
 
     session.sendAudio(audio);
-    drainQueue(3);
 
     expect(ws.send).toHaveBeenCalledTimes(3);
     const calls = (ws.send as ReturnType<typeof vi.fn>).mock.calls;
@@ -114,7 +95,6 @@ describe('VonageMediaSession.sendAudio', () => {
     const audio = Buffer.alloc(160_000, 0x03);
 
     session.sendAudio(audio);
-    drainQueue(250);
 
     expect(ws.send).toHaveBeenCalledTimes(250);
     for (const call of (ws.send as ReturnType<typeof vi.fn>).mock.calls) {
@@ -129,7 +109,6 @@ describe('VonageMediaSession.sendAudio', () => {
     const audio = Buffer.from(Array.from({ length: 1280 }, (_, i) => i % 256));
 
     session.sendAudio(audio);
-    drainQueue(2);
 
     const calls = (ws.send as ReturnType<typeof vi.fn>).mock.calls;
     expect(calls).toHaveLength(2);
@@ -144,7 +123,6 @@ describe('VonageMediaSession.sendAudio', () => {
     const session = new VonageMediaSession(ws);
 
     session.sendAudio(Buffer.alloc(640));
-    drainQueue(1);
 
     expect(ws.send).not.toHaveBeenCalled();
   });
@@ -160,55 +138,18 @@ describe('VonageMediaSession.sendAudio', () => {
     session.on('error', onError);
 
     session.sendAudio(Buffer.alloc(640, 0x05));
-    drainQueue(1);
 
     expect(onError).toHaveBeenCalledTimes(1);
     expect(onError.mock.calls[0][0].message).toBe('WS send failed');
   });
 
-  it('clearAudioQueue stops further frames from being sent', async () => {
+  it('clearAudioQueue is a no-op (synchronous sending has no queue)', async () => {
     const { VonageMediaSession } = await load();
     const ws = makeWs();
     const session = new VonageMediaSession(ws);
-    // Queue 10 frames (6400 bytes)
-    session.sendAudio(Buffer.alloc(6400, 0x04));
 
-    // Drain only 3 frames, then clear
-    vi.advanceTimersByTime(60); // 3 ticks × 20ms
-    session.clearAudioQueue();
-    vi.advanceTimersByTime(500); // advance further — no more frames should be sent
-
-    const sendCount = (ws.send as ReturnType<typeof vi.fn>).mock.calls.length;
-    // Should have sent exactly 3 frames before the queue was cleared
-    expect(sendCount).toBe(3);
-  });
-
-  it('paces frames at 20ms intervals', async () => {
-    const { VonageMediaSession } = await load();
-    const ws = makeWs();
-    const session = new VonageMediaSession(ws);
-    const audio = Buffer.alloc(1920, 0x01); // 3 frames
-
-    session.sendAudio(audio);
-
-    // After 0ms: no frames sent yet (timer hasn't fired)
-    expect(ws.send).toHaveBeenCalledTimes(0);
-
-    // After 20ms: first frame sent
-    vi.advanceTimersByTime(20);
-    expect(ws.send).toHaveBeenCalledTimes(1);
-
-    // After 40ms: second frame
-    vi.advanceTimersByTime(20);
-    expect(ws.send).toHaveBeenCalledTimes(2);
-
-    // After 60ms: third frame
-    vi.advanceTimersByTime(20);
-    expect(ws.send).toHaveBeenCalledTimes(3);
-
-    // No more frames after that
-    vi.advanceTimersByTime(100);
-    expect(ws.send).toHaveBeenCalledTimes(3);
+    // Should not throw
+    expect(() => session.clearAudioQueue()).not.toThrow();
   });
 });
 

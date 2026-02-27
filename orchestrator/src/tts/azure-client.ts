@@ -35,12 +35,20 @@ export function buildSSML(text: string, language: Language, voice: string): stri
     '<sub alias="Step Tu Džob">Step2Job</sub>',
   );
 
+  // Wrap standalone integers (2+ digits) so Azure reads them as cardinal
+  // numbers ("dvije hiljade osam stotina") rather than individual digits
+  // ("dva-osam-nula-nula"). Decimals are also handled (e.g. "3.5").
+  const withNumbers = brandInjected.replace(
+    /\b(\d{2,}(?:[.,]\d+)?)\b/g,
+    '<say-as interpret-as="cardinal">$1</say-as>',
+  );
+
   return [
     `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="http://www.w3.org/2001/mstts" xml:lang="${language}">`,
     `  <voice name="${voice}">`,
     `    <mstts:express-as style="customerservice">`,
     `      <prosody rate="-5%" pitch="+1%">`,
-    `        ${brandInjected}`,
+    `        ${withNumbers}`,
     `      </prosody>`,
     `    </mstts:express-as>`,
     `  </voice>`,

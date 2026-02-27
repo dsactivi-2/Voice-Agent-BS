@@ -85,7 +85,7 @@ describe('buildSSML', () => {
   it('includes prosody tags with correct rate and pitch', () => {
     const ssml = buildSSML('Test tekst', 'sr-RS', 'sr-RS-NicholasNeural');
 
-    expect(ssml).toContain('rate="+3%"');
+    expect(ssml).toContain('rate="-5%"');
     expect(ssml).toContain('pitch="+1%"');
     expect(ssml).toContain('<prosody');
     expect(ssml).toContain('</prosody>');
@@ -115,6 +115,27 @@ describe('buildSSML', () => {
     expect(ssml).toContain('xml:lang="sr-RS"');
     expect(ssml).toContain('name="sr-RS-NicholasNeural"');
     expect(ssml).toContain('Kako ste?');
+  });
+
+  it('wraps 2+ digit integers with say-as cardinal for natural number reading', () => {
+    const ssml = buildSSML('Plata iznosi 2800 KM', 'bs-BA', 'bs-BA-GoranNeural');
+
+    expect(ssml).toContain('<say-as interpret-as="cardinal">2800</say-as>');
+    // Single-digit numbers (< 10) are NOT wrapped
+    expect(ssml).not.toContain('<say-as interpret-as="cardinal">8</say-as>');
+  });
+
+  it('does not wrap single-digit numbers', () => {
+    const ssml = buildSSML('Imate 5 dana', 'bs-BA', 'bs-BA-GoranNeural');
+
+    expect(ssml).not.toContain('<say-as interpret-as="cardinal">5</say-as>');
+  });
+
+  it('wraps multiple numbers independently', () => {
+    const ssml = buildSSML('Od 1000 do 3500 KM', 'bs-BA', 'bs-BA-GoranNeural');
+
+    expect(ssml).toContain('<say-as interpret-as="cardinal">1000</say-as>');
+    expect(ssml).toContain('<say-as interpret-as="cardinal">3500</say-as>');
   });
 });
 
