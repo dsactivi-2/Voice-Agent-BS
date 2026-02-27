@@ -74,6 +74,63 @@ export class DeepgramASRClient extends EventEmitter<DeepgramASRClientEvents> {
         encoding: 'linear16',
         sample_rate: 16000,
         channels: 1,
+        // Domain-specific terms to boost recognition accuracy for job-placement calls.
+        // Nova-3 uses these as hints when decoding ambiguous audio.
+        keyterm: [
+          // Brand names — highest priority, never in training data
+          'Activi',
+          'Step2Job',
+
+          // Finance / salary
+          'KM',
+          'brutto',
+          'netto',
+          'plata',
+          'plaća',
+          'satnica',
+          'prekovremeni',
+
+          // Employment
+          'posao',
+          'zaposlenje',
+          'radno mjesto',
+          'ugovor',
+          'probni rad',
+          'otkazni rok',
+          'poslodavac',
+          'kvalifikacija',
+          'iskustvo',
+
+          // Documents & immigration
+          'diploma',
+          'Priznanje',
+          'nostrifikacija',
+          'viza',
+          'ambasada',
+          'boravak',
+          'radna dozvola',
+          'pasoš',
+          'lična karta',
+          'potvrda',
+
+          // Housing & relocation
+          'stan',
+          'smještaj',
+          'najam',
+
+          // Family
+          'žena',
+          'supruga',
+          'djeca',
+          'dijeca',
+          'porodica',
+
+          // Benefits
+          'godišnji odmor',
+          'bolovanje',
+          'zdravstveno osiguranje',
+          'penzija',
+        ],
       });
 
       this.liveClient.on(LiveTranscriptionEvents.Open, () => {

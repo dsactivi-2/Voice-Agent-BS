@@ -875,7 +875,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       const generator = streamLLMResponse({
         model,
         messages,
-        maxTokens: 300,
+        maxTokens: 120,
         signal: this.currentLLMAbortController.signal,
       });
 
