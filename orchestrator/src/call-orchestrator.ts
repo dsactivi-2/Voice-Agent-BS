@@ -246,9 +246,15 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       await new Promise(resolve => setTimeout(resolve, 800));
       this.isBotSpeaking = true;
       this.turnTakingManager?.setBotSpeaking(true);
-      await this.sendGreeting();
+      const greetingDurationMs = await this.sendGreeting();
+      // Keep isBotSpeaking=true until Vonage finishes playing the greeting audio.
+      // Clearing it early causes the TTS echo to appear as user speech.
+      if (greetingDurationMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, greetingDurationMs + 300));
+      }
       this.isBotSpeaking = false;
       this.turnTakingManager?.setBotSpeaking(false);
+      this.turnTakingManager?.restartSilenceTimer();
 
       logger.info(
         {
@@ -347,7 +353,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
    * Synthesizes and sends the opening greeting to the caller using the
    * agent configured intro phrase. Falls back silently on error.
    */
-  private async sendGreeting(): Promise<void> {
+  private async sendGreeting(): Promise<number> {
     const introText = this.agentConfig.cachedPhrases?.['intro'];
     if (!introText || this.stopped || !this.mediaSession.isOpen()) return;
 
@@ -360,9 +366,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       if (cached && this.mediaSession.isOpen()) {
         this.mediaSession.sendAudio(cached);
         logger.info({ callId: this.callId, bytes: cached.byteLength }, 'Greeting sent from cache');
-        // Reset silence timer — give caller full window to respond after greeting
-        this.turnTakingManager?.restartSilenceTimer();
-        return;
+        return Math.round(cached.byteLength / (16000 * 2) * 1000);
       }
 
       // Cache miss - synthesize directly
@@ -376,11 +380,12 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       if (this.mediaSession.isOpen()) {
         this.mediaSession.sendAudio(audio);
         logger.info({ callId: this.callId, bytes: audio.byteLength }, 'Greeting synthesized and sent');
-        // Reset silence timer — give caller full window to respond after greeting
-        this.turnTakingManager?.restartSilenceTimer();
+        return Math.round(audio.byteLength / (16000 * 2) * 1000);
       }
+      return 0;
     } catch (err) {
       logger.error({ err, callId: this.callId }, 'Failed to send greeting - call continues without it');
+      return 0;
     }
   }
 
@@ -527,6 +532,13 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
   private async handleUserFinishedSpeaking(transcript: string): Promise<void> {
     if (this.stopped || !this.session || !this.memoryManager) return;
 
+    // Echo suppression: while bot is speaking, ignore transcripts to prevent
+    // TTS acoustic echo from triggering a spurious LLM turn.
+    if (this.isBotSpeaking) {
+      logger.info({ callId: this.callId, transcript }, 'Ignoring transcript — bot is speaking (echo suppression)');
+      return;
+    }
+
     // Capture references now — the call may stop (setting this.session = null)
     // while we are suspended at an await point below.
     const session = this.session;
@@ -666,18 +678,16 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     // Release the processing guard so the next user turn is not dropped
     this.isProcessingTurn = false;
 
-    // Cancel current TTS pipeline
+    // Cancel current TTS pipeline and clear isBotSpeaking only if pipeline was active.
+    // If no pipeline is running (e.g. barge-in during greeting echo), leave isBotSpeaking=true
+    // so the greeting duration timer handles the cleanup correctly.
     if (this.currentTTSPipeline) {
       this.currentTTSPipeline.destroy();
       this.currentTTSPipeline = null;
+      this.mediaSession.clearAudioQueue();
+      this.isBotSpeaking = false;
+      this.turnTakingManager?.setBotSpeaking(false);
     }
-
-    // Flush buffered audio frames so Vonage stops playing immediately
-    this.mediaSession.clearAudioQueue();
-
-    // Inform turn-taking that bot stopped speaking
-    this.isBotSpeaking = false;
-    this.turnTakingManager?.setBotSpeaking(false);
   }
 
   /**
