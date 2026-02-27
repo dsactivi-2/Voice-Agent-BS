@@ -11,45 +11,50 @@ const KEY_PREFIX = 'tts:audio:';
  * Each entry maps to the text spoken for that phrase per language variant.
  */
 const STANDARD_PHRASES: Record<string, Record<Language, string>> = {
+  // Greeting phrases — must match agent cachedPhrases.intro exactly
   intro_bs: {
-    'bs-BA': 'Dobro jutro, ovo je Aktivni pozivni centar. Kako vam mogu pomoći?',
-    'sr-RS': 'Dobro jutro, ovo je Aktivni pozivni centar. Kako vam mogu pomoći?',
+    'bs-BA': 'Dobar dan — Goran ovdje iz Step2Job-a.',
+    'sr-RS': 'Dobar dan — Goran ovdje iz Step2Job-a.',
   },
   intro_sr: {
-    'bs-BA': 'Dobar dan, ovde je Aktivni pozivni centar. Čime mogu da vam pomognem?',
-    'sr-RS': 'Dobar dan, ovde je Aktivni pozivni centar. Čime mogu da vam pomognem?',
+    'bs-BA': 'Dobar dan! Moje ime je Nikola iz firme Step2Job.',
+    'sr-RS': 'Dobar dan! Moje ime je Nikola iz firme Step2Job.',
   },
+  // Repeat phrases — must match agent cachedPhrases.repeat
   repeat_bs: {
-    'bs-BA': 'Izvините, možete li ponoviti?',
-    'sr-RS': 'Izvините, možete li ponoviti?',
+    'bs-BA': 'Mozete li ponoviti, molim vas?',
+    'sr-RS': 'Mozete li ponoviti, molim vas?',
   },
   repeat_sr: {
-    'bs-BA': 'Izvinite, možete li da ponovite?',
-    'sr-RS': 'Izvinite, možete li da ponovite?',
+    'bs-BA': 'Mozete li da ponovite, molim vas?',
+    'sr-RS': 'Mozete li da ponovite, molim vas?',
   },
+  // Goodbye phrases — must match agent cachedPhrases.goodbye
   goodbye_bs: {
-    'bs-BA': 'Hvala vam na pozivu. Prijatan dan!',
-    'sr-RS': 'Hvala vam na pozivu. Prijatan dan!',
+    'bs-BA': 'Razumijem potpuno. Ako se situacija promijeni, tu smo. Prijatno!',
+    'sr-RS': 'Razumijem potpuno. Ako se situacija promijeni, tu smo. Prijatno!',
   },
   goodbye_sr: {
-    'bs-BA': 'Hvala vam na pozivu. Prijatan dan!',
-    'sr-RS': 'Hvala vam na pozivu. Prijatan dan!',
+    'bs-BA': 'Hvala vam na vremenu. Dovidjenja!',
+    'sr-RS': 'Hvala vam na vremenu. Dovidjenja!',
   },
+  // Silence check phrases — must match agent cachedPhrases.still_there
   still_there_bs: {
-    'bs-BA': 'Halo, jeste li još uvijek tu?',
-    'sr-RS': 'Halo, jeste li još uvijek tu?',
+    'bs-BA': 'Jeste li jos tu?',
+    'sr-RS': 'Jeste li jos tu?',
   },
   still_there_sr: {
-    'bs-BA': 'Halo, da li ste još tu?',
-    'sr-RS': 'Halo, da li ste još tu?',
+    'bs-BA': 'Jeste li jos tu?',
+    'sr-RS': 'Jeste li jos tu?',
   },
+  // Filler phrases — must match agent fillerLibrary options
   filler_acknowledge_bs: {
-    'bs-BA': 'Razumijem.',
-    'sr-RS': 'Razumijem.',
+    'bs-BA': 'Razumijem...',
+    'sr-RS': 'Razumijem...',
   },
   filler_acknowledge_sr: {
-    'bs-BA': 'Razumem.',
-    'sr-RS': 'Razumem.',
+    'bs-BA': 'Razumem...',
+    'sr-RS': 'Razumem...',
   },
   filler_thinking_bs: {
     'bs-BA': 'Samo trenutak...',
@@ -60,20 +65,21 @@ const STANDARD_PHRASES: Record<string, Record<Language, string>> = {
     'sr-RS': 'Samo sekund...',
   },
   filler_affirm_bs: {
-    'bs-BA': 'Da, naravno.',
-    'sr-RS': 'Da, naravno.',
+    'bs-BA': 'Tako je...',
+    'sr-RS': 'Tako je...',
   },
   filler_affirm_sr: {
     'bs-BA': 'Da, naravno.',
     'sr-RS': 'Da, naravno.',
   },
+  // Silence follow-up — must match agent cachedPhrases.silence_followup
   silence_followup_bs: {
-    'bs-BA': 'Jeste li zainteresirani za više informacija?',
-    'sr-RS': 'Jeste li zainteresirani za više informacija?',
+    'bs-BA': 'Sta mislite?',
+    'sr-RS': 'Sta mislite?',
   },
   silence_followup_sr: {
-    'bs-BA': 'Da li ste zainteresovani za više informacija?',
-    'sr-RS': 'Da li ste zainteresovani za više informacija?',
+    'bs-BA': 'Sta mislite?',
+    'sr-RS': 'Sta mislite?',
   },
 };
 
