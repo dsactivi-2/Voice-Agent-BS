@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { logger } from '../utils/logger.js';
 import { config } from '../config.js';
-import { createCall, updateCallResult, upsertCallMemory } from '../db/queries.js';
+import { updateCallResult } from '../db/queries.js';
 import { canCallNumber, markCallMade } from '../session/anti-loop.js';
 import { incrementActiveCalls, decrementActiveCalls } from '../server.js';
 import { VonageMediaSession } from './media-stream.js';
@@ -172,16 +172,10 @@ export class VonageProvider implements TelephonyProvider {
 
     await markCallMade(from);
 
-    // Create call record in the database
-    try {
-      await createCall({
-        callId: uuid,
-        phoneNumber: from,
-        language: 'bs-BA', // Will be enriched from session context
-      });
-    } catch (err) {
-      logger.error({ err, uuid }, 'Failed to create call record for Vonage call');
-    }
+    // NOTE: createCall is handled by CallOrchestrator.start() which has the
+    // correct language, abGroup, and llmModeFinal. Do NOT insert here —
+    // doing so races with the orchestrator and wins due to ON CONFLICT DO NOTHING,
+    // permanently storing the wrong language in the DB record.
 
     incrementActiveCalls();
 
@@ -214,28 +208,13 @@ export class VonageProvider implements TelephonyProvider {
 
     this.pendingCallMeta.delete(uuid);
 
-    decrementActiveCalls();
+    // NOTE: decrementActiveCalls() is NOT called here — the session 'stop' event
+    // fires when the WebSocket closes and decrements the counter there.
+    // Calling it here too would double-decrement and go negative.
 
-    // Update call record
-    try {
-      await updateCallResult({
-        callId: uuid,
-        result: 'success',
-      });
-    } catch (err) {
-      logger.error({ err, uuid }, 'Failed to update call result for Vonage call');
-    }
-
-    // Persist cross-call memory
-    try {
-      await upsertCallMemory({
-        phoneNumber: '', // Will be resolved from session context
-        language: 'bs-BA',
-        outcome: 'completed',
-      });
-    } catch (err) {
-      logger.error({ err, uuid }, 'Failed to upsert call memory for Vonage call');
-    }
+    // NOTE: updateCallResult and upsertCallMemory are NOT called here —
+    // CallOrchestrator.stop() handles both with correct data (duration, turns,
+    // language, phone number, conversation summary, etc.). Provider has none of that.
 
     this.events.onCallEnded(uuid, reason);
   }
