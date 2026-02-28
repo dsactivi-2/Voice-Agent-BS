@@ -41,6 +41,9 @@ vi.mock('ioredis', () => {
     on(_event: string, _handler: unknown) { return this; }
     get(_key: string): Promise<string | null> { return Promise.resolve(null); }
     set(_key: string, _value: string, _mode: string, _ttl: number): Promise<string | null> { return Promise.resolve('OK'); }
+    publish(_channel: string, _message: string): Promise<number> { return Promise.resolve(0); }
+    subscribe(_channel: string): Promise<number> { return Promise.resolve(1); }
+    connect(): Promise<void> { return Promise.resolve(); }
     quit(): Promise<void> { return Promise.resolve(); }
     disconnect(): void { /* noop */ }
   }

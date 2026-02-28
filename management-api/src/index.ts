@@ -46,13 +46,16 @@ async function main(): Promise<void> {
   const { dispositionRoutes } = await import('./routes/dispositions.js');
   const { leadRoutes } = await import('./routes/leads.js');
 
-  // Configure Redis for auth routes
+  // Configure Redis for auth routes and start event subscriber
   try {
     const { redis } = await import('./utils/redis.js');
     setRedisClient(redis);
     logger.info('Redis client configured');
+
+    const { startRedisSubscriber } = await import('./services/redis-subscriber.js');
+    await startRedisSubscriber(config.REDIS_URL);
   } catch (redisErr) {
-    logger.warn({ err: redisErr }, 'Redis initialization failed — refresh token blacklisting disabled');
+    logger.warn({ err: redisErr }, 'Redis initialization failed — SSE event streaming and token blacklisting disabled');
   }
 
   await fastify.register(authRoutes);
@@ -63,6 +66,9 @@ async function main(): Promise<void> {
   await fastify.register(campaignRoutes);
   await fastify.register(dispositionRoutes);
   await fastify.register(leadRoutes);
+
+  const { eventRoutes } = await import('./routes/events.js');
+  await fastify.register(eventRoutes);
 
   // ── Global error handler ──────────────────────────────────────────────────
 
@@ -97,6 +103,8 @@ async function main(): Promise<void> {
       await fastify.close();
       const { closePool } = await import('./db/pool.js');
       await closePool();
+      const { stopRedisSubscriber } = await import('./services/redis-subscriber.js');
+      await stopRedisSubscriber();
       logger.info('Graceful shutdown complete');
       process.exit(0);
     } catch (err) {

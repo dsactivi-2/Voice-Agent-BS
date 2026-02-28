@@ -56,6 +56,9 @@ import {
   upsertCallMemory,
 } from './db/queries.js';
 
+// Events
+import { publishCallEvent } from './events/publisher.js';
+
 // ---------------------------------------------------------------------------
 // Events emitted by the orchestrator for external observability
 // ---------------------------------------------------------------------------
@@ -211,12 +214,33 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       });
       this.asrClient.on('reconnected', replayRingBuffer);
       this.asrClient.on('transcript', (event) => {
+        // Minimum confidence threshold for accepting transcripts.
+        // Proven in live call f856f748: confidence 0.24 produced "Tlancomline" (garbage).
+        // Finals below this threshold are dropped entirely; interims are also dropped
+        // so they cannot be used as H1 fallback with garbage content.
+        const MIN_CONFIDENCE = 0.5;
+
         if (event.isFinal) {
+          if (event.confidence < MIN_CONFIDENCE) {
+            logger.warn(
+              { callId: this.callId, text: event.text, confidence: event.confidence, threshold: MIN_CONFIDENCE },
+              'ASR FINAL transcript dropped — confidence below threshold',
+            );
+            return;
+          }
           logger.info(
             { callId: this.callId, text: event.text, confidence: event.confidence },
             'ASR FINAL transcript',
           );
         } else {
+          if (event.confidence < MIN_CONFIDENCE && event.confidence > 0) {
+            // confidence=0 on interims is normal (Deepgram omits it) — only warn when explicitly low
+            logger.warn(
+              { callId: this.callId, text: event.text, confidence: event.confidence },
+              'ASR interim transcript dropped — confidence below threshold',
+            );
+            return;
+          }
           logger.debug(
             { callId: this.callId, text: event.text },
             'ASR interim transcript',
@@ -241,6 +265,16 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       );
 
       this.emit('started', this.callId);
+      void publishCallEvent({
+        type: 'call.started',
+        callId: this.callId,
+        phoneNumber: this.phoneNumber,
+        language: this.agentConfig.language,
+        campaignId: this.campaignId,
+        abGroup: this.session!.abGroup,
+        llmMode: this.session!.llmMode,
+        ts: Date.now(),
+      });
 
       // 10. Send initial greeting — 800ms pause simulates human pickup
       await new Promise(resolve => setTimeout(resolve, 800));
@@ -341,6 +375,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     this.cleanup();
 
     this.emit('ended', this.callId, result);
+    void publishCallEvent({ type: 'call.ended', callId: this.callId, result, ts: Date.now() });
 
     logger.info(
       { callId: this.callId, result, durationSec, turnCount: this.turnCounter },
@@ -602,6 +637,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         const previousMode = session.llmMode;
         session.llmMode = 'full';
         this.emit('llmSwitched', previousMode, 'full');
+        void publishCallEvent({ type: 'call.llm_switched', callId: this.callId, from: previousMode, to: 'full', ts: Date.now() });
         logger.info(
           { callId: this.callId, from: previousMode, to: 'full' },
           'LLM mode switched to full',
@@ -609,7 +645,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       }
 
       // 4. Process LLM response and pipe to TTS
-      await this.processLLMResponse(trimmedTranscript);
+      await this.processLLMResponse(trimmedTranscript, turnStartTime);
 
       // 5. Calculate and log latency metric
       const totalLatencyMs = Date.now() - turnStartTime;
@@ -632,6 +668,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       session.turnCount = this.turnCounter;
 
       this.emit('turnCompleted', currentTurn, session.phase);
+      void publishCallEvent({ type: 'call.turn_completed', callId: this.callId, turn: currentTurn, phase: session.phase, ts: Date.now() });
 
       logger.info(
         {
@@ -817,7 +854,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
    *
    * @param transcript - The user's transcribed speech
    */
-  private async processLLMResponse(transcript: string): Promise<void> {
+  private async processLLMResponse(transcript: string, turnStartTime: number): Promise<void> {
     if (this.stopped || !this.session || !this.memoryManager) return;
 
     const llmStartTime = Date.now();
@@ -844,8 +881,9 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       'LLM_TURN_START',
     );
 
-    // 2. Calculate adaptive delay
-    const adaptiveDelayMs = calculateAdaptiveDelay(transcript, 0);
+    // 2. Calculate adaptive delay — subtract filler+processing latency already elapsed
+    const actualLatencyMs = Date.now() - turnStartTime;
+    const adaptiveDelayMs = calculateAdaptiveDelay(transcript, actualLatencyMs);
 
     // 3. Create a new TTS pipeline for this turn
     this.currentTTSPipeline = new ChunkedTTSPipeline(
@@ -1044,6 +1082,23 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     this.session.interestScores.push(llmResponse.interest_score);
     this.session.complexityScore = llmResponse.complexity_score;
 
+    // H4: End call after 2 consecutive very low interest scores (rejection signal).
+    // Threshold 0.1 = explicit disinterest ("ne zanima me", "nemam vremena", etc.)
+    const REJECTION_THRESHOLD = 0.1;
+    const REJECTION_STREAK = 2;
+    const scores = this.session.interestScores;
+    if (scores.length >= REJECTION_STREAK) {
+      const recent = scores.slice(-REJECTION_STREAK);
+      if (recent.every((s) => s < REJECTION_THRESHOLD)) {
+        logger.info(
+          { callId: this.callId, recentScores: recent },
+          'Consecutive low interest scores — ending call as rejected',
+        );
+        void this.stop('rejected');
+        return;
+      }
+    }
+
     // Update structured memory based on what the user said
     this.memoryManager.updateFromLLMResponse(llmResponse, userTranscript);
 
@@ -1055,6 +1110,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       this.session.phase = nextPhase;
       this.turnTakingManager?.setPhase(nextPhase);
       this.emit('phaseChanged', previousPhase, nextPhase);
+      void publishCallEvent({ type: 'call.phase_changed', callId: this.callId, from: previousPhase, to: nextPhase, ts: Date.now() });
 
       logger.info(
         { callId: this.callId, from: previousPhase, to: nextPhase },
