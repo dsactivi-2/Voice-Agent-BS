@@ -6,7 +6,7 @@ import type { Turn, LLMResponse, StructuredMemory } from '../types.js';
 type Message = { role: 'system' | 'user' | 'assistant'; content: string };
 
 const SUMMARY_PROMPT =
-  'Fasse das bisherige Gespraech in 2-3 Saetzen zusammen. Fokus auf: Kundeninteresse, Einwaende, wichtige Fakten, Stimmung.';
+  'Napiši kratki sažetak razgovora u 2-3 rečenice. Fokus na: interes korisnika, prigovori, ključne činjenice, raspoloženje.';
 
 const openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
 
@@ -45,7 +45,7 @@ export class MemoryManager {
     if (this.summary) {
       messages.push({
         role: 'system',
-        content: `Bisheriges Gespraech: ${this.summary}`,
+        content: `Dosadašnji razgovor: ${this.summary}`,
       });
     }
 
@@ -59,7 +59,7 @@ export class MemoryManager {
     if (hasStructuredData) {
       messages.push({
         role: 'system',
-        content: `Kundeninfo: ${JSON.stringify(this.structured)}`,
+        content: `Info o korisniku: ${JSON.stringify(this.structured)}`,
       });
     }
 
@@ -74,7 +74,7 @@ export class MemoryManager {
     return messages;
   }
 
-  updateFromLLMResponse(response: LLMResponse): void {
+  updateFromLLMResponse(response: LLMResponse, userTranscript: string): void {
     if (response.complexity_score > 0.5) {
       this.structured.tone = 'skeptical';
     }
@@ -83,22 +83,25 @@ export class MemoryManager {
       this.structured.microCommitment = true;
     }
 
-    const replyLower = response.reply_text.toLowerCase();
+    // Check user's words (not bot reply) for objections to record in memory
+    const userLower = userTranscript.toLowerCase();
 
     const objectionKeywords = [
       'nemam iskustvo',
       'ne znam jezik',
-      'previse dobro',
+      'previse skupo',
       'moram pricati',
       'ne mogu',
       'nemam vremena',
       'ne zanima me',
       'skupo',
+      'ne treba',
+      'ne zelim',
     ];
 
     for (const keyword of objectionKeywords) {
       if (
-        replyLower.includes(keyword) &&
+        userLower.includes(keyword) &&
         !this.structured.objections.includes(keyword)
       ) {
         this.structured.objections.push(keyword);

@@ -30,12 +30,8 @@ const OBJECTION_KEYWORDS = [
   'prekini',
   'ne kontaktiraj',
   'ne zovi',
-  'previse',
+  'previse skupo',
   'nema potrebe',
-  'problem',
-  'ali',
-  'medjutim',
-  'ipak',
 ] as const;
 
 /** Keywords/phrases that indicate the user agrees or confirms. */
@@ -44,33 +40,17 @@ const AGREEMENT_KEYWORDS = [
   'slazem se',
   'prihvatam',
   'dogovoreno',
-  'u redu',
-  'naravno',
-  'svakako',
-  'moze',
-  'hajde',
   'pristajem',
-  'zelim',
-  'hocu',
+  'zelim da se prijavim',
+  'hocu da se prijavim',
   'zakaži',
   'zakazi',
   'potpisi',
-  'potpisi',
   'dajem saglasnost',
-  'pozitivno',
-  'potvrditi',
   'potvrdjujem',
-  'važi',
-  'vazi',
-  'da da',
+  'da da, moze',
   'da naravno',
-  'bas tako',
-  'super',
-  'odlicno',
-  'odlično',
-  'sjajno',
-  'savrseno',
-  'savršeno',
+  'hajde da',
 ] as const;
 
 export interface CreateCallSessionParams {
@@ -133,19 +113,20 @@ export function createCallSession(params: CreateCallSessionParams): CallSession 
  *   close     -> objection  (objection detected)
  *   confirm   -> confirm    (stays)
  *
- * @param session     - The current call session
- * @param llmResponse - Object containing at minimum interest_score and reply_text
+ * @param session        - The current call session
+ * @param llmResponse    - Object containing at minimum interest_score and reply_text
+ * @param userTranscript - The user's spoken text (used for objection/agreement detection)
  * @returns The next phase to transition to
  */
 export function getNextPhase(
   session: CallSession,
   llmResponse: { interest_score: number; reply_text: string },
+  userTranscript: string,
 ): Phase {
   const { phase } = session;
   const interest = llmResponse.interest_score;
-  const responseText = llmResponse.reply_text;
-  const objectionDetected = hasObjection(responseText);
-  const agreementDetected = hasAgreement(responseText);
+  const objectionDetected = hasObjection(userTranscript);
+  const agreementDetected = hasAgreement(userTranscript);
 
   let nextPhase: Phase = phase;
 

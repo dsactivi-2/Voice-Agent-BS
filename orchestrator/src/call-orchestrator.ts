@@ -986,7 +986,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
     // 7. Process the LLM response (update session state)
     if (llmResponse && this.session) {
-      this.updateSessionFromResponse(llmResponse, fullResponseText);
+      this.updateSessionFromResponse(llmResponse, transcript);
     }
 
     // 8. Log LLM latency
@@ -1036,7 +1036,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
    */
   private updateSessionFromResponse(
     llmResponse: LLMResponse,
-    _fullText: string,
+    userTranscript: string,
   ): void {
     if (!this.session || !this.memoryManager) return;
 
@@ -1044,12 +1044,12 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     this.session.interestScores.push(llmResponse.interest_score);
     this.session.complexityScore = llmResponse.complexity_score;
 
-    // Update structured memory from LLM response
-    this.memoryManager.updateFromLLMResponse(llmResponse);
+    // Update structured memory based on what the user said
+    this.memoryManager.updateFromLLMResponse(llmResponse, userTranscript);
 
-    // Determine next phase
+    // Determine next phase based on user's transcript (not bot reply)
     const previousPhase = this.session.phase;
-    const nextPhase = getNextPhase(this.session, llmResponse);
+    const nextPhase = getNextPhase(this.session, llmResponse, userTranscript);
 
     if (nextPhase !== previousPhase) {
       this.session.phase = nextPhase;

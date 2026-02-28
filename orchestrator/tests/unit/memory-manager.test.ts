@@ -118,10 +118,10 @@ describe('MemoryManager', () => {
     expect(manager.getSummary()).toBe('Summary of the conversation.');
   });
 
-  it('includes summary in LLM context when available', async () => {
+  it('includes summary in LLM context when available (in BS/SR language)', async () => {
     mockCreate.mockResolvedValue({
       choices: [
-        { message: { content: 'Customer is interested in Germany jobs.' } },
+        { message: { content: 'Korisnik je zainteresiran za posao u Njemačkoj.' } },
       ],
     });
 
@@ -135,24 +135,25 @@ describe('MemoryManager', () => {
 
     const context = manager.buildLLMContext('System');
     const summaryMessage = context.find((m) =>
-      m.content.startsWith('Bisheriges Gespraech:'),
+      m.content.startsWith('Dosadašnji razgovor:'),
     );
     expect(summaryMessage).toBeDefined();
     expect(summaryMessage!.content).toContain(
-      'Customer is interested in Germany jobs.',
+      'Korisnik je zainteresiran za posao u Njemačkoj.',
     );
   });
 
-  it('updates structured memory from LLM response', () => {
+  it('updates structured memory from LLM response based on user transcript', () => {
     const response: LLMResponse = {
-      reply_text:
-        'Kazete da ne znam jezik, ali nudimo besplatnu obuku.',
+      reply_text: 'Razumijemo, imamo besplatnu obuku za sve.',
       interest_score: 0.8,
       complexity_score: 0.6,
       phase: 'objection',
     };
+    // Objection keyword "ne znam jezik" is in the user's words, not the bot's reply
+    const userTranscript = 'Kazem da ne znam jezik, ne mogu raditi.';
 
-    manager.updateFromLLMResponse(response);
+    manager.updateFromLLMResponse(response, userTranscript);
 
     const memory = manager.getStructuredMemory();
     expect(memory.tone).toBe('skeptical');
@@ -160,16 +161,34 @@ describe('MemoryManager', () => {
     expect(memory.objections).toContain('ne znam jezik');
   });
 
+  it('does not record objection when objection is only in bot reply (not user transcript)', () => {
+    const response: LLMResponse = {
+      reply_text: 'Kazete da ne znam jezik, ali imamo obuku.',
+      interest_score: 0.8,
+      complexity_score: 0.6,
+      phase: 'objection',
+    };
+    // User said something neutral — objection is only in bot's reply paraphrase
+    const userTranscript = 'Hmm, nisam siguran.';
+
+    manager.updateFromLLMResponse(response, userTranscript);
+
+    const memory = manager.getStructuredMemory();
+    // "ne znam jezik" was only in bot reply, not user transcript — should NOT be recorded
+    expect(memory.objections).not.toContain('ne znam jezik');
+  });
+
   it('does not duplicate objections', () => {
     const response: LLMResponse = {
-      reply_text: 'Ne mogu to prihvatiti jer ne mogu platiti.',
+      reply_text: 'Razumijemo.',
       interest_score: 0.3,
       complexity_score: 0.7,
       phase: 'objection',
     };
+    const userTranscript = 'Ne mogu to prihvatiti jer ne mogu platiti.';
 
-    manager.updateFromLLMResponse(response);
-    manager.updateFromLLMResponse(response);
+    manager.updateFromLLMResponse(response, userTranscript);
+    manager.updateFromLLMResponse(response, userTranscript);
 
     const memory = manager.getStructuredMemory();
     const neMotgu = memory.objections.filter((o) => o === 'ne mogu');
@@ -178,12 +197,15 @@ describe('MemoryManager', () => {
 
   it('reset clears all state', () => {
     manager.addTurn(createTurn({ text: 'Some turn' }));
-    manager.updateFromLLMResponse({
-      reply_text: 'Response',
-      interest_score: 0.9,
-      complexity_score: 0.7,
-      phase: 'pitch',
-    });
+    manager.updateFromLLMResponse(
+      {
+        reply_text: 'Response',
+        interest_score: 0.9,
+        complexity_score: 0.7,
+        phase: 'pitch',
+      },
+      '',
+    );
 
     manager.reset();
 
@@ -197,19 +219,23 @@ describe('MemoryManager', () => {
     expect(context).toHaveLength(1); // Only system prompt
   });
 
-  it('includes structured memory in context when data is present', () => {
-    manager.updateFromLLMResponse({
-      reply_text: 'nemam iskustvo ali zelim raditi',
-      interest_score: 0.8,
-      complexity_score: 0.4,
-      phase: 'qualify',
-    });
+  it('includes structured memory in context when objection data is present', () => {
+    // Objection keyword in user transcript, not bot reply
+    manager.updateFromLLMResponse(
+      {
+        reply_text: 'Razumijemo, imamo rjesenje za to.',
+        interest_score: 0.8,
+        complexity_score: 0.4,
+        phase: 'qualify',
+      },
+      'Nemam iskustvo u toj oblasti.',
+    );
 
     const context = manager.buildLLMContext('System');
-    const kundeninfo = context.find((m) =>
-      m.content.startsWith('Kundeninfo:'),
+    const infoMsg = context.find((m) =>
+      m.content.startsWith('Info o korisniku:'),
     );
-    expect(kundeninfo).toBeDefined();
-    expect(kundeninfo!.content).toContain('nemam iskustvo');
+    expect(infoMsg).toBeDefined();
+    expect(infoMsg!.content).toContain('nemam iskustvo');
   });
 });
