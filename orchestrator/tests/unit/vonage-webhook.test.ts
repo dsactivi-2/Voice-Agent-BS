@@ -244,7 +244,7 @@ describe('createEventHandler', () => {
     await handler(request, reply);
 
     expect(reply.status).toHaveBeenCalledWith(200);
-    expect(onCallStarted).toHaveBeenCalledWith('call-uuid-started', '+38761111111', '+38762222222');
+    expect(onCallStarted).toHaveBeenCalledWith('call-uuid-started', '+38761111111', '+38762222222', 'inbound');
   });
 });
 

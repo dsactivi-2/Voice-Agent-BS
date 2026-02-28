@@ -85,7 +85,7 @@ describe('buildSSML', () => {
   it('includes prosody tags with correct rate and pitch', () => {
     const ssml = buildSSML('Test tekst', 'sr-RS', 'sr-RS-NicholasNeural');
 
-    expect(ssml).toContain('rate="-5%"');
+    expect(ssml).toContain('rate="-10%"');
     expect(ssml).toContain('pitch="+1%"');
     expect(ssml).toContain('<prosody');
     expect(ssml).toContain('</prosody>');

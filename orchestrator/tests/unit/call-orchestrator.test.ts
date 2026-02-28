@@ -145,6 +145,7 @@ vi.mock('../../src/vad/turn-taking.js', async () => {
     setBotSpeaking = vi.fn();
     setPhase = vi.fn();
     onTranscriptReceived = vi.fn();
+    restartSilenceTimer = vi.fn();
     destroy = vi.fn();
     reset = vi.fn();
   }

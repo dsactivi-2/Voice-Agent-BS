@@ -52,16 +52,16 @@ describe('shouldFlushChunk', () => {
   });
 
   it('returns true when buffer ends with period and meets min length', () => {
-    expect(shouldFlushChunk('This is a sentence.', 0)).toBe(true);
+    expect(shouldFlushChunk('This is a suitably long sentence that will trigger the TTS pipeline flush when full.', 0)).toBe(true);
   });
 
   it('returns true when buffer ends with question mark and meets min length', () => {
-    expect(shouldFlushChunk('Kako ste danas?', 0)).toBe(true);
+    expect(shouldFlushChunk('Da li biste bili zainteresovani za jedno od nasih radnih mjesta u Njemackoj ili Austriji?', 0)).toBe(true);
   });
 
   it('returns true when MAX_WAIT_MS exceeded and meets min length', () => {
-    expect(shouldFlushChunk('This has no ending', 800)).toBe(true);
-    expect(shouldFlushChunk('This has no ending', 1000)).toBe(true);
+    expect(shouldFlushChunk('This text contains no sentence-ending punctuation and is longer than the minimum length', 800)).toBe(true);
+    expect(shouldFlushChunk('This text contains no sentence-ending punctuation and is longer than the minimum length', 1000)).toBe(true);
   });
 
   it('returns false when MAX_WAIT_MS not reached and no trigger', () => {
@@ -108,20 +108,17 @@ describe('ChunkedTTSPipeline', () => {
     const chunkReady = vi.fn();
     pipeline.on('chunkReady', chunkReady);
 
-    pipeline.addTokens('Ovo je test rečenica.');
+    const text = 'Ovo je dovoljno dugacka recenica koja prelazi minimum od osamdeset karaktera za TTS.';
+    pipeline.addTokens(text);
 
     // Should emit chunkReady synchronously
-    expect(chunkReady).toHaveBeenCalledWith('Ovo je test rečenica.');
+    expect(chunkReady).toHaveBeenCalledWith(text);
 
     // Allow microtask for async synthesis to complete
     await vi.advanceTimersByTimeAsync(0);
 
     expect(mockSynthesizeSpeech).toHaveBeenCalledTimes(1);
-    expect(mockSynthesizeSpeech).toHaveBeenCalledWith(
-      'Ovo je test rečenica.',
-      'bs-BA',
-      undefined,
-    );
+    expect(mockSynthesizeSpeech).toHaveBeenCalledWith(text, 'bs-BA', undefined);
 
     pipeline.destroy();
   });
@@ -174,11 +171,11 @@ describe('ChunkedTTSPipeline', () => {
     const onAudio = vi.fn();
     const pipeline = new ChunkedTTSPipeline('bs-BA', undefined, onAudio);
 
-    // First sentence
-    pipeline.addTokens('Prva rečenica ovdje.');
+    // First sentence — 80+ chars ending with period triggers auto-flush
+    pipeline.addTokens('Ovo je prva dovoljno dugacka recenica koja prelazi minimum osamdeset karaktera za TTS.');
 
-    // Second sentence
-    pipeline.addTokens(' Druga rečenica ovdje.');
+    // Second sentence — also 80+ chars, triggers its own flush
+    pipeline.addTokens('Druga recenica treba biti jednako dugacka da takodje bude automatski flushirana.');
 
     // Allow async work to complete
     await vi.advanceTimersByTimeAsync(0);
@@ -195,7 +192,8 @@ describe('ChunkedTTSPipeline', () => {
     const onAudio = vi.fn();
     const pipeline = new ChunkedTTSPipeline('bs-BA', undefined, onAudio);
 
-    pipeline.addTokens('Dobar dan, kako ste?');
+    const text = 'Da li biste bili zainteresovani za jedno od nasih radnih mjesta u Njemackoj ili Austriji?';
+    pipeline.addTokens(text);
 
     // Let async cache check resolve
     await vi.advanceTimersByTimeAsync(0);
@@ -204,7 +202,7 @@ describe('ChunkedTTSPipeline', () => {
     expect(mockSynthesizeSpeech).not.toHaveBeenCalled();
 
     // Audio callback should have been invoked with cached data
-    expect(onAudio).toHaveBeenCalledWith(cachedBuffer, 'Dobar dan, kako ste?');
+    expect(onAudio).toHaveBeenCalledWith(cachedBuffer, text);
 
     pipeline.destroy();
   });
@@ -234,14 +232,15 @@ describe('ChunkedTTSPipeline', () => {
     const onError = vi.fn();
     pipeline.on('error', onError);
 
-    pipeline.addTokens('Tekst koji ne radi.');
+    const text = 'Ovo je tekst koji ne radi a treba biti dovoljno dugacak za automatski flush pipeline.';
+    pipeline.addTokens(text);
 
     await vi.advanceTimersByTimeAsync(0);
 
     expect(onError).toHaveBeenCalledTimes(1);
     expect(onError).toHaveBeenCalledWith(
       expect.objectContaining({ message: 'Azure down' }),
-      'Tekst koji ne radi.',
+      text,
     );
     expect(onAudio).not.toHaveBeenCalled();
 

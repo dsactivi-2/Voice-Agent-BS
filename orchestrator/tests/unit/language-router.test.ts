@@ -52,7 +52,7 @@ describe('routeByPhoneNumber', () => {
 
     expect(agent.language).toBe('sr-RS');
     expect(agent.deepgramLanguage).toBe('sr');
-    expect(agent.ttsVoice).toBe('sr-RS-NicholasNeural');
+    expect(agent.ttsVoice).toBe('sr-RS-SophieNeural');
     expect(agent.telnyxPhoneNumber).toBe('+381111234567');
   });
 

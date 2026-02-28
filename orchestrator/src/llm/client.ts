@@ -70,14 +70,9 @@ export async function* streamLLMResponse(
   } catch (parseError) {
     logger.error(
       { parseError, rawContent: fullContent },
-      'Failed to parse LLM JSON response \u2014 returning default LLMResponse',
+      'Failed to parse LLM JSON response \u2014 rethrowing for fallback handler',
     );
-    return {
-      reply_text: '',
-      interest_score: 0.5,
-      complexity_score: 0.3,
-      phase: 'hook',
-    };
+    throw parseError;
   }
 }
 

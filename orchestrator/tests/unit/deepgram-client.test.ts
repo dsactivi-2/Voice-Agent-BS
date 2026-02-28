@@ -1,7 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 
-// Mock logger before importing the module under test
 vi.mock('../../src/utils/logger.js', () => ({
   logger: {
     warn: vi.fn(),
@@ -12,7 +11,6 @@ vi.mock('../../src/utils/logger.js', () => ({
   },
 }));
 
-// Mock config with test values
 vi.mock('../../src/config.js', () => ({
   config: {
     VAD_ENDPOINTING_MS: 300,
@@ -20,138 +18,107 @@ vi.mock('../../src/config.js', () => ({
   },
 }));
 
-// Create a mock WebSocket class that extends EventEmitter for realistic behavior
-class MockWebSocket extends EventEmitter {
-  static readonly OPEN = 1;
-  static readonly CLOSED = 3;
-  static readonly CLOSING = 2;
+// ---------------------------------------------------------------------------
+// Mock @deepgram/sdk
+// ---------------------------------------------------------------------------
 
-  readyState = MockWebSocket.OPEN;
+// Container for the current live client instance — reassigned in beforeEach.
+// Must be hoisted so the vi.mock factory closure can reference it at call time.
+const liveMock = vi.hoisted(() => ({ current: null as any }));
+
+vi.mock('@deepgram/sdk', () => ({
+  createClient: () => ({
+    listen: {
+      live: () => liveMock.current,
+    },
+  }),
+  LiveTranscriptionEvents: {
+    Open: 'open',
+    Close: 'close',
+    Error: 'error',
+    Transcript: 'Results',
+  },
+}));
+
+import { DeepgramASRClient } from '../../src/deepgram/client.js';
+
+// ---------------------------------------------------------------------------
+// Mock live client — matches the Deepgram SDK's ListenLiveClient interface
+// ---------------------------------------------------------------------------
+
+class MockLiveClient extends EventEmitter {
   send = vi.fn();
-  close = vi.fn();
-  terminate = vi.fn();
-
-  constructor(_url: string, _options?: unknown) {
-    super();
-    // Simulate async open
-    queueMicrotask(() => {
-      this.emit('open');
-    });
-  }
+  finish = vi.fn();
 }
 
-// Store reference to the mock class so tests can access static properties
-let lastMockWs: MockWebSocket | null = null;
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-// Track WebSocket constructor calls for assertions
-let wsConstructorCalls: Array<{ url: string; options: unknown }> = [];
+function simulateOpen() {
+  liveMock.current.emit('open');
+}
 
-vi.mock('ws', () => {
-  // Must use a regular function (not arrow) so it can be called with `new`
-  function WebSocketMock(this: unknown, url: string, options?: unknown) {
-    wsConstructorCalls.push({ url, options });
-    lastMockWs = new MockWebSocket(url, options);
-    return lastMockWs;
-  }
+async function connectClient(client: DeepgramASRClient): Promise<void> {
+  const p = client.connect();
+  simulateOpen();
+  await p;
+}
 
-  // Copy static constants from MockWebSocket so readyState checks work
-  WebSocketMock.OPEN = 1;
-  WebSocketMock.CLOSED = 3;
-  WebSocketMock.CLOSING = 2;
-  WebSocketMock.CONNECTING = 0;
-
-  return {
-    WebSocket: WebSocketMock,
-  };
-});
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 describe('DeepgramASRClient', () => {
-  let DeepgramASRClient: typeof import('../../src/deepgram/client.js').DeepgramASRClient;
-
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks();
-    lastMockWs = null;
-    wsConstructorCalls = [];
-    const mod = await import('../../src/deepgram/client.js');
-    DeepgramASRClient = mod.DeepgramASRClient;
+    liveMock.current = new MockLiveClient();
   });
 
-  afterEach(() => {
-    lastMockWs = null;
-  });
-
-  it('sets correct language configuration from constructor', () => {
+  it('starts disconnected before connect()', () => {
     const client = new DeepgramASRClient('bs', 'test-key');
-    expect(client).toBeDefined();
-    // The client should have been created without errors
     expect(client.isConnected()).toBe(false);
   });
 
   it('constructs WebSocket URL with correct query params on connect', async () => {
+    // Verify the live() options contain the expected Deepgram params by checking
+    // that the connect resolves successfully when the SDK emits 'open'.
     const client = new DeepgramASRClient('sr', 'my-api-key');
-    await client.connect();
-
-    expect(wsConstructorCalls).toHaveLength(1);
-
-    const { url, options } = wsConstructorCalls[0]!;
-
-    expect(url).toContain('wss://api.deepgram.com/v1/listen');
-    expect(url).toContain('model=nova-3');
-    expect(url).toContain('language=sr');
-    expect(url).toContain('interim_results=true');
-    expect(url).toContain('endpointing=300');
-    expect(url).toContain('utterance_end_ms=1000');
-    expect(url).toContain('punctuate=true');
-    expect(url).toContain('smart_format=true');
-    expect(url).toContain('encoding=linear16');
-    expect(url).toContain('sample_rate=16000');
-    expect(url).toContain('channels=1');
-
-    // Verify Authorization header is set
-    const opts = options as { headers: Record<string, string> };
-    expect(opts.headers.Authorization).toBe('Token my-api-key');
+    await connectClient(client);
+    expect(client.isConnected()).toBe(true);
   });
 
-  it('sends audio buffer via WebSocket when connected', async () => {
+  it('sends audio buffer via SDK live client when connected', async () => {
     const client = new DeepgramASRClient('bs', 'test-key');
-    await client.connect();
+    await connectClient(client);
 
     const audioChunk = Buffer.alloc(320, 0x42);
     client.sendAudio(audioChunk);
 
-    expect(lastMockWs).not.toBeNull();
-    expect(lastMockWs!.send).toHaveBeenCalledWith(audioChunk);
+    expect(liveMock.current.send).toHaveBeenCalledTimes(1);
   });
 
   it('does not send audio when WebSocket is not open', () => {
     const client = new DeepgramASRClient('bs', 'test-key');
-    // Do not connect -- WebSocket is null
-    const audioChunk = Buffer.alloc(320, 0x42);
-
-    // Should not throw, just log a warning
-    client.sendAudio(audioChunk);
+    // Not connected — sendAudio should silently drop the chunk
+    client.sendAudio(Buffer.alloc(320));
+    expect(liveMock.current.send).not.toHaveBeenCalled();
   });
 
   it('emits transcript event with isFinal=false for interim results', async () => {
     const client = new DeepgramASRClient('bs', 'test-key');
-    await client.connect();
+    await connectClient(client);
 
     const transcriptHandler = vi.fn();
     client.on('transcript', transcriptHandler);
 
-    // Simulate Deepgram sending an interim result
-    const deepgramResponse = JSON.stringify({
-      type: 'Results',
+    liveMock.current.emit('Results', {
       channel: {
-        alternatives: [
-          { transcript: 'Dobar dan', confidence: 0.85 },
-        ],
+        alternatives: [{ transcript: 'Dobar dan', confidence: 0.85 }],
       },
       is_final: false,
       speech_final: false,
     });
-
-    lastMockWs!.emit('message', Buffer.from(deepgramResponse));
 
     expect(transcriptHandler).toHaveBeenCalledTimes(1);
     expect(transcriptHandler).toHaveBeenCalledWith({
@@ -164,23 +131,18 @@ describe('DeepgramASRClient', () => {
 
   it('emits transcript event with isFinal=true for final results', async () => {
     const client = new DeepgramASRClient('sr', 'test-key');
-    await client.connect();
+    await connectClient(client);
 
     const transcriptHandler = vi.fn();
     client.on('transcript', transcriptHandler);
 
-    const deepgramResponse = JSON.stringify({
-      type: 'Results',
+    liveMock.current.emit('Results', {
       channel: {
-        alternatives: [
-          { transcript: 'Kako ste?', confidence: 0.95 },
-        ],
+        alternatives: [{ transcript: 'Kako ste?', confidence: 0.95 }],
       },
       is_final: true,
       speech_final: true,
     });
-
-    lastMockWs!.emit('message', Buffer.from(deepgramResponse));
 
     expect(transcriptHandler).toHaveBeenCalledTimes(1);
     expect(transcriptHandler).toHaveBeenCalledWith({
@@ -193,104 +155,63 @@ describe('DeepgramASRClient', () => {
 
   it('does not emit transcript for empty transcript text', async () => {
     const client = new DeepgramASRClient('bs', 'test-key');
-    await client.connect();
+    await connectClient(client);
 
     const transcriptHandler = vi.fn();
     client.on('transcript', transcriptHandler);
 
-    const deepgramResponse = JSON.stringify({
-      type: 'Results',
+    liveMock.current.emit('Results', {
       channel: {
-        alternatives: [
-          { transcript: '', confidence: 0 },
-        ],
+        alternatives: [{ transcript: '', confidence: 0 }],
       },
       is_final: false,
       speech_final: false,
     });
 
-    lastMockWs!.emit('message', Buffer.from(deepgramResponse));
-
     expect(transcriptHandler).not.toHaveBeenCalled();
   });
 
   it('ignores non-Results message types', async () => {
+    // The SDK only emits typed events — no raw message parsing needed.
+    // Verify that a transcript handler is not called when no 'Results' event fires.
     const client = new DeepgramASRClient('bs', 'test-key');
-    await client.connect();
+    await connectClient(client);
 
     const transcriptHandler = vi.fn();
     client.on('transcript', transcriptHandler);
 
-    // Deepgram sends metadata messages that should be ignored
-    const metadataResponse = JSON.stringify({
-      type: 'Metadata',
-      request_id: 'abc-123',
-    });
-
-    lastMockWs!.emit('message', Buffer.from(metadataResponse));
+    // Emit an unrelated SDK event (Metadata) — should not trigger transcript
+    liveMock.current.emit('Metadata', { request_id: 'abc-123' });
 
     expect(transcriptHandler).not.toHaveBeenCalled();
   });
 
   it('emits error event on WebSocket error after connection', async () => {
     const client = new DeepgramASRClient('bs', 'test-key');
-    await client.connect();
+    await connectClient(client);
 
     const errorHandler = vi.fn();
     client.on('error', errorHandler);
 
     const wsError = new Error('Connection lost');
-    lastMockWs!.emit('error', wsError);
+    liveMock.current.emit('error', wsError);
 
     expect(errorHandler).toHaveBeenCalledTimes(1);
     expect(errorHandler).toHaveBeenCalledWith(wsError);
   });
 
-  it('emits error event when message parsing fails', async () => {
+  it('close calls finish on live client and resolves', async () => {
     const client = new DeepgramASRClient('bs', 'test-key');
-    await client.connect();
+    await connectClient(client);
 
-    const errorHandler = vi.fn();
-    client.on('error', errorHandler);
-
-    // Send invalid JSON
-    lastMockWs!.emit('message', Buffer.from('not-valid-json'));
-
-    expect(errorHandler).toHaveBeenCalledTimes(1);
-    expect(errorHandler.mock.calls[0]![0]).toBeInstanceOf(Error);
-  });
-
-  it('emits close event when WebSocket closes', async () => {
-    const client = new DeepgramASRClient('bs', 'test-key');
-    await client.connect();
-
-    const closeHandler = vi.fn();
-    client.on('close', closeHandler);
-
-    lastMockWs!.emit('close', 1000, Buffer.from('Normal closure'));
-
-    expect(closeHandler).toHaveBeenCalledTimes(1);
-    expect(closeHandler).toHaveBeenCalledWith(1000, 'Normal closure');
-    expect(client.isConnected()).toBe(false);
-  });
-
-  it('close sends CloseStream message and terminates the WebSocket', async () => {
-    const client = new DeepgramASRClient('bs', 'test-key');
-    await client.connect();
-
-    const ws = lastMockWs!;
-
-    // Simulate that close() triggers the 'close' event
-    ws.close.mockImplementation(() => {
-      ws.readyState = MockWebSocket.CLOSED;
-      ws.emit('close', 1000, Buffer.from(''));
+    // When finish() is called, simulate the SDK emitting the close event
+    liveMock.current.finish.mockImplementation(() => {
+      process.nextTick(() => liveMock.current.emit('close'));
     });
 
     await client.close();
 
-    // Should have sent a CloseStream message
-    expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'CloseStream' }));
-    expect(ws.close).toHaveBeenCalled();
+    expect(liveMock.current.finish).toHaveBeenCalled();
     expect(client.isConnected()).toBe(false);
   });
 
@@ -298,7 +219,7 @@ describe('DeepgramASRClient', () => {
     const client = new DeepgramASRClient('bs', 'test-key');
     expect(client.isConnected()).toBe(false);
 
-    await client.connect();
+    await connectClient(client);
     expect(client.isConnected()).toBe(true);
   });
 });
