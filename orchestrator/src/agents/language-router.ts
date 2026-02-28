@@ -77,15 +77,12 @@ export function routeByPhoneNumber(calledNumber: string): AgentConfig {
  * @returns AgentConfig for the matched language
  */
 export function routeVonageCall(calledNumber: string): AgentConfig {
-  const normalised = normaliseNumber(calledNumber);
-  const vonageNumber = normaliseNumber(config.VONAGE_PHONE_NUMBER ?? '');
+  const agent = config.VONAGE_DEFAULT_LANGUAGE === 'sr-RS' ? agentSR : agentBS;
 
-  if (vonageNumber && normalised === vonageNumber) {
-    logger.info({ calledNumber, language: agentBS.language }, 'Vonage call routed to BS agent');
-    return agentBS;
-  }
+  logger.info(
+    { calledNumber, language: agent.language },
+    'Vonage call routed by VONAGE_DEFAULT_LANGUAGE',
+  );
 
-  // Default: Bosnia/Herzegovina agent
-  logger.info({ calledNumber }, 'Vonage call defaulting to BS agent');
-  return agentBS;
+  return agent;
 }
