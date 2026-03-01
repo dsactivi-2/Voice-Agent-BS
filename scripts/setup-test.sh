@@ -59,17 +59,27 @@ check_cmd() {
   done
 }
 
-# Load .env without overwriting existing vars
+# Load .env line-by-line — safe against special characters in values (!, $, (, ), etc.)
 load_env() {
   if [[ ! -f "$ENV_FILE" ]]; then
     log_err ".env not found at $ENV_FILE"
     exit 1
   fi
-  set -a
-  # shellcheck source=/dev/null
-  source <(grep -v '^\s*#' "$ENV_FILE" | grep -v '^\s*$' | grep '=')
-  set +a
-  log_ok ".env loaded from $ENV_FILE"
+  local LINE KEY VALUE COUNT=0
+  while IFS= read -r LINE || [[ -n "$LINE" ]]; do
+    # Skip comments and blank lines
+    [[ "$LINE" =~ ^[[:space:]]*'#' ]] && continue
+    [[ "$LINE" =~ ^[[:space:]]*$ ]] && continue
+    [[ "$LINE" != *=* ]] && continue
+    KEY="${LINE%%=*}"
+    VALUE="${LINE#*=}"
+    # Strip surrounding single or double quotes
+    VALUE="${VALUE#\"}" VALUE="${VALUE%\"}"
+    VALUE="${VALUE#\'}" VALUE="${VALUE%\'}"
+    # declare -x is the safest export — does not evaluate VALUE as bash
+    declare -gx "${KEY}"="${VALUE}" 2>/dev/null && (( COUNT++ )) || true
+  done < "$ENV_FILE"
+  log_ok ".env loaded: $COUNT variables"
 }
 
 # ── Section 1: Server Setup ───────────────────────────────────────────────────
