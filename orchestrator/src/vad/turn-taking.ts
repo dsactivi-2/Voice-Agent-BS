@@ -63,6 +63,9 @@ export class TurnTakingManager extends EventEmitter<TurnTakingEvents> {
   /** Whether we are waiting for a final transcript after VAD speechEnd. */
   private waitingForFinal: boolean = false;
 
+  /** Last interim transcript received — used as fallback if no final arrives. */
+  private lastInterimTranscript: string = '';
+
   /** Timer for the waiting-for-final safety net. */
   private finalTranscriptTimerId: ReturnType<typeof setTimeout> | null = null;
 
@@ -150,7 +153,11 @@ export class TurnTakingManager extends EventEmitter<TurnTakingEvents> {
     if (this.destroyed) return;
 
     if (!isFinal) {
-      logger.debug({ text: text.trim() }, 'TurnTaking: interim transcript');
+      const trimmedInterim = text.trim();
+      if (trimmedInterim.length > 0) {
+        this.lastInterimTranscript = trimmedInterim;
+      }
+      logger.debug({ text: trimmedInterim }, 'TurnTaking: interim transcript');
       return;
     }
 
@@ -162,11 +169,13 @@ export class TurnTakingManager extends EventEmitter<TurnTakingEvents> {
     if (this.waitingForFinal) {
       // VAD already signalled speechEnd — emit immediately
       this.waitingForFinal = false;
+      this.lastInterimTranscript = '';
       this.clearFinalTranscriptTimer();
       this.emitUserFinished(trimmed);
     } else {
       // Buffer the transcript until VAD signals speechEnd
       this.pendingFinalTranscript = trimmed;
+      this.lastInterimTranscript = '';
     }
   }
 
@@ -193,6 +202,7 @@ export class TurnTakingManager extends EventEmitter<TurnTakingEvents> {
     this.bargeInEmitted = false;
     this.pendingFinalTranscript = null;
     this.waitingForFinal = false;
+    this.lastInterimTranscript = '';
     this.phase = 'hook';
     this.silenceAskFired = false;
 
@@ -329,7 +339,25 @@ export class TurnTakingManager extends EventEmitter<TurnTakingEvents> {
 
       if (this.waitingForFinal) {
         this.waitingForFinal = false;
-        logger.warn('TurnTaking: final transcript timeout — no final received from Deepgram');
+        this.finalTranscriptTimerId = null;
+
+        const fallback = this.lastInterimTranscript;
+        this.lastInterimTranscript = '';
+
+        if (fallback.length > 3) {
+          // Use the last interim transcript as a best-effort fallback
+          logger.warn(
+            { fallbackTranscript: fallback },
+            'TurnTaking: final transcript timeout — using last interim as fallback',
+          );
+          this.emitUserFinished(fallback);
+        } else {
+          // No usable interim either — log and restart silence monitor so the
+          // user gets a chance to respond (instead of a stuck dead state).
+          logger.warn('TurnTaking: final transcript timeout — no interim available, restarting silence monitor');
+          this.startSilenceMonitor();
+        }
+        return;
       }
 
       this.finalTranscriptTimerId = null;

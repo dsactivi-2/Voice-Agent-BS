@@ -238,4 +238,108 @@ describe('MemoryManager', () => {
     expect(infoMsg).toBeDefined();
     expect(infoMsg!.content).toContain('nemam iskustvo');
   });
+
+  describe('H6: cross-call memory', () => {
+    it('loadCrossCallMemory injects summary into buildLLMContext', () => {
+      manager.loadCrossCallMemory({
+        summary: 'Korisnik je zainteresiran za rad u Njemackoj, ali ima brige oko jezika.',
+        structured: null,
+        callCount: 2,
+      });
+
+      const context = manager.buildLLMContext('System');
+      const crossCallMsg = context.find((m) =>
+        m.content.startsWith('Prethodni razgovor'),
+      );
+
+      expect(crossCallMsg).toBeDefined();
+      expect(crossCallMsg!.content).toContain('2. poziv');
+      expect(crossCallMsg!.content).toContain('Korisnik je zainteresiran');
+    });
+
+    it('cross-call message appears after system prompt but before current summary', () => {
+      manager.loadCrossCallMemory({
+        summary: 'Prior call context.',
+        structured: null,
+        callCount: 1,
+      });
+
+      // Trigger an in-call summary
+      mockCreate.mockResolvedValue({ choices: [{ message: { content: 'Current summary.' } }] });
+
+      const context = manager.buildLLMContext('System');
+
+      const systemIdx = context.findIndex((m) => m.content === 'System');
+      const crossCallIdx = context.findIndex((m) => m.content.startsWith('Prethodni razgovor'));
+
+      // cross-call must come immediately after system prompt (index 1)
+      expect(systemIdx).toBe(0);
+      expect(crossCallIdx).toBe(1);
+    });
+
+    it('loadCrossCallMemory merges objections from prior call', () => {
+      manager.loadCrossCallMemory({
+        summary: null,
+        structured: {
+          objections: ['ne znam jezik', 'ne mogu'],
+          tone: 'skeptical',
+          microCommitment: false,
+        },
+        callCount: 1,
+      });
+
+      const memory = manager.getStructuredMemory();
+      expect(memory.objections).toContain('ne znam jezik');
+      expect(memory.objections).toContain('ne mogu');
+    });
+
+    it('does not add duplicate objections if same objection raised again in current call', () => {
+      manager.loadCrossCallMemory({
+        summary: null,
+        structured: {
+          objections: ['ne mogu'],
+          tone: 'neutral',
+          microCommitment: false,
+        },
+        callCount: 1,
+      });
+
+      manager.updateFromLLMResponse(
+        { reply_text: 'Razumijemo.', interest_score: 0.3, complexity_score: 0.5, phase: 'objection' },
+        'Ne mogu to prihvatiti.',
+      );
+
+      const memory = manager.getStructuredMemory();
+      const neMogu = memory.objections.filter((o) => o === 'ne mogu');
+      expect(neMogu).toHaveLength(1);
+    });
+
+    it('does not inject cross-call message when no prior summary exists', () => {
+      // loadCrossCallMemory with null summary
+      manager.loadCrossCallMemory({ summary: null, structured: null, callCount: 0 });
+
+      const context = manager.buildLLMContext('System');
+      const crossCallMsg = context.find((m) => m.content.startsWith('Prethodni razgovor'));
+
+      expect(crossCallMsg).toBeUndefined();
+    });
+
+    it('reset clears cross-call memory', () => {
+      manager.loadCrossCallMemory({
+        summary: 'Some prior context.',
+        structured: { objections: ['ne mogu'], tone: 'skeptical', microCommitment: true },
+        callCount: 3,
+      });
+
+      manager.reset();
+
+      const context = manager.buildLLMContext('System');
+      const crossCallMsg = context.find((m) => m.content.startsWith('Prethodni razgovor'));
+      expect(crossCallMsg).toBeUndefined();
+
+      const memory = manager.getStructuredMemory();
+      expect(memory.objections).toHaveLength(0);
+      expect(memory.tone).toBe('neutral');
+    });
+  });
 });

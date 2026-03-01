@@ -11,6 +11,7 @@ const {
   mockInsertTurn,
   mockInsertMetric,
   mockUpsertCallMemory,
+  mockGetCallMemory,
   mockAssignABGroup,
   mockStreamLLMResponse,
   mockGetCachedAudio,
@@ -27,6 +28,7 @@ const {
   mockInsertTurn: vi.fn().mockResolvedValue(undefined),
   mockInsertMetric: vi.fn().mockResolvedValue(undefined),
   mockUpsertCallMemory: vi.fn().mockResolvedValue(undefined),
+  mockGetCallMemory: vi.fn().mockResolvedValue(null), // null = first-time caller by default
   mockAssignABGroup: vi.fn().mockReturnValue('mini_to_full'),
   mockStreamLLMResponse: vi.fn(),
   mockGetCachedAudio: vi.fn().mockResolvedValue(Buffer.from('fake-audio')),
@@ -100,6 +102,7 @@ vi.mock('../../src/db/queries.js', () => ({
   insertTurn: (...args: unknown[]) => mockInsertTurn(...args),
   insertMetric: (...args: unknown[]) => mockInsertMetric(...args),
   upsertCallMemory: (...args: unknown[]) => mockUpsertCallMemory(...args),
+  getCallMemory: (...args: unknown[]) => mockGetCallMemory(...args),
 }));
 
 vi.mock('../../src/llm/switch-logic.js', () => ({
@@ -124,6 +127,7 @@ vi.mock('../../src/llm/memory-manager.js', async () => {
     { role: 'system', content: 'Test prompt' },
   ]);
   MemoryManager.prototype.updateFromLLMResponse = vi.fn();
+  MemoryManager.prototype.loadCrossCallMemory = vi.fn();
   MemoryManager.prototype.reset = vi.fn();
   return { MemoryManager };
 });
@@ -189,6 +193,33 @@ vi.mock('../../src/audio/ring-buffer.js', () => {
   }
   return { RingBuffer: MockRingBuffer };
 });
+
+vi.mock('../../src/deepgram/client.js', async () => {
+  const { EventEmitter } = await import('node:events');
+  class MockDeepgramASRClient extends EventEmitter {
+    connect = vi.fn().mockResolvedValue(undefined);
+    sendAudio = vi.fn();
+    close = vi.fn().mockResolvedValue(undefined);
+    isConnected = vi.fn().mockReturnValue(true);
+  }
+  return { DeepgramASRClient: MockDeepgramASRClient };
+});
+
+vi.mock('../../src/metrics/prometheus.js', () => ({
+  activeCalls: { inc: vi.fn(), dec: vi.fn() },
+  callsTotal: { inc: vi.fn() },
+  callDuration: { observe: vi.fn() },
+  e2eLatency: { observe: vi.fn() },
+  llmLatency: { observe: vi.fn() },
+  llmSwitches: { inc: vi.fn() },
+  errorsTotal: { inc: vi.fn() },
+  ttsCacheHits: { inc: vi.fn() },
+  ttsCacheMisses: { inc: vi.fn() },
+}));
+
+vi.mock('../../src/events/publisher.js', () => ({
+  publishCallEvent: vi.fn().mockResolvedValue(undefined),
+}));
 
 // ---------------------------------------------------------------------------
 // Import after mocks are set up
@@ -513,6 +544,397 @@ describe('CallOrchestrator', () => {
           result: 'error',
         }),
       );
+    });
+  });
+
+  describe('H2: ASR confidence filter', () => {
+    function getAsrClient(orchestrator: CallOrchestrator): EventEmitter {
+      return (orchestrator as unknown as { asrClient: EventEmitter }).asrClient;
+    }
+
+    function getTurnTakingManager(orchestrator: CallOrchestrator): { onTranscriptReceived: ReturnType<typeof vi.fn> } {
+      return (orchestrator as unknown as { turnTakingManager: { onTranscriptReceived: ReturnType<typeof vi.fn> } }).turnTakingManager;
+    }
+
+    it('passes high-confidence final transcript to TurnTakingManager', async () => {
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      const ttm = getTurnTakingManager(orchestrator);
+      const asr = getAsrClient(orchestrator);
+
+      asr.emit('transcript', { text: 'Zanima me posao u Njemackoj', isFinal: true, confidence: 0.92, speechFinal: true });
+
+      expect(ttm.onTranscriptReceived).toHaveBeenCalledWith(true, 'Zanima me posao u Njemackoj');
+    });
+
+    it('drops low-confidence final transcript (confidence < 0.5)', async () => {
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      const ttm = getTurnTakingManager(orchestrator);
+      const asr = getAsrClient(orchestrator);
+
+      // Live call f856f748 confidence: 0.24 → "Tlancomline" (confirmed garbage)
+      asr.emit('transcript', { text: 'Tlancomline', isFinal: true, confidence: 0.24, speechFinal: false });
+
+      expect(ttm.onTranscriptReceived).not.toHaveBeenCalled();
+    });
+
+    it('drops final transcript at exactly the threshold boundary (confidence = 0.499)', async () => {
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      const ttm = getTurnTakingManager(orchestrator);
+      const asr = getAsrClient(orchestrator);
+
+      asr.emit('transcript', { text: 'Hmm', isFinal: true, confidence: 0.499, speechFinal: false });
+
+      expect(ttm.onTranscriptReceived).not.toHaveBeenCalled();
+    });
+
+    it('accepts final transcript at exactly 0.5 confidence', async () => {
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      const ttm = getTurnTakingManager(orchestrator);
+      const asr = getAsrClient(orchestrator);
+
+      asr.emit('transcript', { text: 'Da zanima me', isFinal: true, confidence: 0.5, speechFinal: true });
+
+      expect(ttm.onTranscriptReceived).toHaveBeenCalledWith(true, 'Da zanima me');
+    });
+
+    it('drops low-confidence interim transcript (prevents garbage H1 fallback)', async () => {
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      const ttm = getTurnTakingManager(orchestrator);
+      const asr = getAsrClient(orchestrator);
+
+      asr.emit('transcript', { text: 'Tlancomline', isFinal: false, confidence: 0.3, speechFinal: false });
+
+      expect(ttm.onTranscriptReceived).not.toHaveBeenCalled();
+    });
+
+    it('passes interim transcript with confidence = 0 (Deepgram omits it on normal interims)', async () => {
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      const ttm = getTurnTakingManager(orchestrator);
+      const asr = getAsrClient(orchestrator);
+
+      // confidence=0 on interims is normal (Deepgram often omits it) — should pass through
+      asr.emit('transcript', { text: 'Ne mogu', isFinal: false, confidence: 0, speechFinal: false });
+
+      expect(ttm.onTranscriptReceived).toHaveBeenCalledWith(false, 'Ne mogu');
+    });
+
+    it('passes high-confidence interim transcript', async () => {
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      const ttm = getTurnTakingManager(orchestrator);
+      const asr = getAsrClient(orchestrator);
+
+      asr.emit('transcript', { text: 'Zanima me', isFinal: false, confidence: 0.85, speechFinal: false });
+
+      expect(ttm.onTranscriptReceived).toHaveBeenCalledWith(false, 'Zanima me');
+    });
+  });
+
+  describe('H4: rejection detection', () => {
+    function triggerTurnWithScore(orchestrator: CallOrchestrator, score: number): void {
+      const session = (orchestrator as unknown as { session: { interestScores: number[]; complexityScore: number; phase: string; conversationSummary: string; structuredMemory: unknown } }).session;
+      if (!session) throw new Error('session is null');
+
+      mockGetNextPhase.mockReturnValue(session.phase);
+
+      const mockResponse: LLMResponse = {
+        reply_text: 'Razumijem.',
+        interest_score: score,
+        complexity_score: 0.3,
+        phase: session.phase as import('../../src/types.js').Phase,
+      };
+      mockStreamLLMResponse.mockReturnValue(
+        (async function* (): AsyncGenerator<string, LLMResponse> {
+          yield '{"reply_text":"Razumijem."}';
+          return mockResponse;
+        })(),
+      );
+
+      const ttm = (orchestrator as unknown as { turnTakingManager: EventEmitter }).turnTakingManager;
+      ttm.emit('userFinishedSpeaking', 'Hmm, ne znam.');
+    }
+
+    it('does not end call on a single low interest score', async () => {
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      const endedHandler = vi.fn();
+      orchestrator.on('ended', endedHandler);
+
+      triggerTurnWithScore(orchestrator, 0.05);
+      await vi.advanceTimersByTimeAsync(200);
+
+      expect(endedHandler).not.toHaveBeenCalled();
+    });
+
+    it('ends call with "rejected" after 2 consecutive low interest scores', async () => {
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      const endedHandler = vi.fn();
+      orchestrator.on('ended', endedHandler);
+
+      // Turn 1: score 0.05 — single low, no rejection yet
+      triggerTurnWithScore(orchestrator, 0.05);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(endedHandler).not.toHaveBeenCalled();
+
+      // Turn 2: score 0.08 — second consecutive low → rejection
+      triggerTurnWithScore(orchestrator, 0.08);
+      await vi.advanceTimersByTimeAsync(200);
+
+      expect(mockUpdateCallResult).toHaveBeenCalledWith(
+        expect.objectContaining({ result: 'rejected' }),
+      );
+      expect(endedHandler).toHaveBeenCalledWith('test-call-123', 'rejected');
+    });
+
+    it('does not reject when low score is followed by a normal score', async () => {
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      const endedHandler = vi.fn();
+      orchestrator.on('ended', endedHandler);
+
+      // Turn 1: low
+      triggerTurnWithScore(orchestrator, 0.05);
+      await vi.advanceTimersByTimeAsync(200);
+
+      // Turn 2: high — streak reset
+      triggerTurnWithScore(orchestrator, 0.7);
+      await vi.advanceTimersByTimeAsync(200);
+
+      // Turn 3: low again — not consecutive with Turn 1
+      triggerTurnWithScore(orchestrator, 0.05);
+      await vi.advanceTimersByTimeAsync(200);
+
+      expect(endedHandler).not.toHaveBeenCalled();
+    });
+
+    it('does not reject when score is exactly at the threshold (0.1)', async () => {
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      const endedHandler = vi.fn();
+      orchestrator.on('ended', endedHandler);
+
+      // 0.1 is NOT below 0.1 — should NOT trigger rejection
+      triggerTurnWithScore(orchestrator, 0.1);
+      await vi.advanceTimersByTimeAsync(200);
+      triggerTurnWithScore(orchestrator, 0.1);
+      await vi.advanceTimersByTimeAsync(200);
+
+      expect(endedHandler).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('H5: Prometheus metrics', () => {
+    async function importMetricMocks() {
+      const mocks = await import('../../src/metrics/prometheus.js');
+      return {
+        activeCalls: mocks.activeCalls as unknown as { inc: ReturnType<typeof vi.fn>; dec: ReturnType<typeof vi.fn> },
+        callsTotal: mocks.callsTotal as unknown as { inc: ReturnType<typeof vi.fn> },
+        callDuration: mocks.callDuration as unknown as { observe: ReturnType<typeof vi.fn> },
+        e2eLatency: mocks.e2eLatency as unknown as { observe: ReturnType<typeof vi.fn> },
+        llmLatency: mocks.llmLatency as unknown as { observe: ReturnType<typeof vi.fn> },
+        errorsTotal: mocks.errorsTotal as unknown as { inc: ReturnType<typeof vi.fn> },
+        ttsCacheHits: mocks.ttsCacheHits as unknown as { inc: ReturnType<typeof vi.fn> },
+        ttsCacheMisses: mocks.ttsCacheMisses as unknown as { inc: ReturnType<typeof vi.fn> },
+      };
+    }
+
+    it('increments activeCalls on start and decrements on stop', async () => {
+      const { orchestrator } = createOrchestrator();
+      const { activeCalls } = await importMetricMocks();
+
+      await orchestrator.start();
+      expect(activeCalls.inc).toHaveBeenCalledWith({ language: 'bs-BA' });
+
+      await orchestrator.stop('success');
+      expect(activeCalls.dec).toHaveBeenCalledWith({ language: 'bs-BA' });
+    });
+
+    it('increments callsTotal with correct labels on stop', async () => {
+      const { orchestrator } = createOrchestrator();
+      const { callsTotal } = await importMetricMocks();
+
+      await orchestrator.start();
+      await orchestrator.stop('success');
+
+      expect(callsTotal.inc).toHaveBeenCalledWith(
+        expect.objectContaining({ language: 'bs-BA', result: 'success' }),
+      );
+    });
+
+    it('observes callDuration on stop', async () => {
+      const { orchestrator } = createOrchestrator();
+      const { callDuration } = await importMetricMocks();
+
+      await orchestrator.start();
+      await orchestrator.stop('timeout');
+
+      expect(callDuration.observe).toHaveBeenCalledWith(
+        { language: 'bs-BA' },
+        expect.any(Number),
+      );
+    });
+
+    it('increments ttsCacheHits when a cached phrase is found', async () => {
+      // silence ask → playAudioFromCache('still_there_bs') → getCachedAudio hit
+      mockGetCachedAudio.mockResolvedValue(Buffer.from('still-there-audio'));
+
+      const { orchestrator } = createOrchestrator();
+      const { ttsCacheHits } = await importMetricMocks();
+
+      await orchestrator.start();
+
+      const ttm = (orchestrator as unknown as { turnTakingManager: EventEmitter }).turnTakingManager;
+      ttm.emit('silenceTimeout', 'ask');
+      await vi.advanceTimersByTimeAsync(200);
+
+      expect(ttsCacheHits.inc).toHaveBeenCalled();
+    });
+
+    it('increments ttsCacheMisses when cached phrase is not found', async () => {
+      // silence ask → playAudioFromCache → getCachedAudio returns null → cache miss
+      mockGetCachedAudio.mockResolvedValue(null);
+
+      const { orchestrator } = createOrchestrator();
+      const { ttsCacheMisses } = await importMetricMocks();
+
+      await orchestrator.start();
+
+      const ttm = (orchestrator as unknown as { turnTakingManager: EventEmitter }).turnTakingManager;
+      ttm.emit('silenceTimeout', 'ask');
+      await vi.advanceTimersByTimeAsync(200);
+
+      expect(ttsCacheMisses.inc).toHaveBeenCalled();
+    });
+
+    it('increments errorsTotal on media session error', async () => {
+      const { orchestrator, mediaSession } = createOrchestrator();
+      const { errorsTotal } = await importMetricMocks();
+
+      await orchestrator.start();
+
+      mediaSession.emit('error', new Error('WebSocket dropped'));
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(errorsTotal.inc).toHaveBeenCalledWith(
+        expect.objectContaining({ service: 'media', type: 'session_error' }),
+      );
+    });
+
+    it('observes e2eLatency after a completed turn', async () => {
+      const mockResponse: LLMResponse = {
+        reply_text: 'Hvala.',
+        interest_score: 0.5,
+        complexity_score: 0.3,
+        phase: 'hook',
+      };
+      mockStreamLLMResponse.mockReturnValue(
+        (async function* (): AsyncGenerator<string, LLMResponse> {
+          yield '{"reply_text":"Hvala."}';
+          return mockResponse;
+        })(),
+      );
+
+      const { orchestrator } = createOrchestrator();
+      const { e2eLatency } = await importMetricMocks();
+
+      await orchestrator.start();
+
+      const ttm = (orchestrator as unknown as { turnTakingManager: EventEmitter }).turnTakingManager;
+      ttm.emit('userFinishedSpeaking', 'Zanima me posao.');
+      await vi.advanceTimersByTimeAsync(200);
+
+      expect(e2eLatency.observe).toHaveBeenCalledWith(
+        expect.objectContaining({ language: 'bs-BA' }),
+        expect.any(Number),
+      );
+    });
+  });
+
+  describe('H6: cross-call memory loading', () => {
+    function getMemoryManager(orchestrator: CallOrchestrator): { loadCrossCallMemory: ReturnType<typeof vi.fn> } {
+      return (orchestrator as unknown as { memoryManager: { loadCrossCallMemory: ReturnType<typeof vi.fn> } }).memoryManager;
+    }
+
+    it('calls getCallMemory with phoneNumber and campaignId on start', async () => {
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      expect(mockGetCallMemory).toHaveBeenCalledWith('+38761000000', 'campaign-1');
+    });
+
+    it('calls loadCrossCallMemory when prior memory exists', async () => {
+      const priorMemory = {
+        id: 'mem-1',
+        phone_number: '+38761000000',
+        language: 'bs-BA' as const,
+        campaign_id: 'campaign-1',
+        conversation_summary: 'Korisnik zainteresiran za posao u Njemackoj.',
+        structured_memory: {
+          objections: ['ne znam jezik'],
+          tone: 'skeptical' as const,
+          microCommitment: false,
+        },
+        outcome: 'no_answer',
+        sentiment_score: 0.4,
+        call_count: 2,
+        last_call_at: new Date(),
+        created_at: new Date(),
+      };
+      mockGetCallMemory.mockResolvedValueOnce(priorMemory);
+
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      const memMgr = getMemoryManager(orchestrator);
+      expect(memMgr.loadCrossCallMemory).toHaveBeenCalledWith({
+        summary: 'Korisnik zainteresiran za posao u Njemackoj.',
+        structured: {
+          objections: ['ne znam jezik'],
+          tone: 'skeptical',
+          microCommitment: false,
+        },
+        callCount: 2,
+      });
+    });
+
+    it('does not call loadCrossCallMemory when no prior memory exists (first-time caller)', async () => {
+      mockGetCallMemory.mockResolvedValueOnce(null);
+
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      const memMgr = getMemoryManager(orchestrator);
+      expect(memMgr.loadCrossCallMemory).not.toHaveBeenCalled();
+    });
+
+    it('proceeds normally when getCallMemory throws (DB down)', async () => {
+      mockGetCallMemory.mockRejectedValueOnce(new Error('DB connection refused'));
+
+      const { orchestrator } = createOrchestrator();
+      const startedHandler = vi.fn();
+      orchestrator.on('started', startedHandler);
+
+      // Should not throw — DB failure is swallowed
+      await expect(orchestrator.start()).resolves.toBeUndefined();
+      expect(startedHandler).toHaveBeenCalledWith('test-call-123');
     });
   });
 });

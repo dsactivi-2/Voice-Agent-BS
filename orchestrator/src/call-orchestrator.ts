@@ -54,10 +54,24 @@ import {
   insertTurn,
   insertMetric,
   upsertCallMemory,
+  getCallMemory,
 } from './db/queries.js';
 
 // Events
 import { publishCallEvent } from './events/publisher.js';
+
+// Prometheus metrics
+import {
+  activeCalls,
+  callsTotal,
+  callDuration,
+  e2eLatency,
+  llmLatency,
+  llmSwitches,
+  errorsTotal,
+  ttsCacheHits,
+  ttsCacheMisses,
+} from './metrics/prometheus.js';
 
 // ---------------------------------------------------------------------------
 // Events emitted by the orchestrator for external observability
@@ -174,6 +188,32 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       // 2. Initialize memory manager
       this.memoryManager = new MemoryManager();
 
+      // 2a. Load cross-call memory for returning callers (non-blocking — DB failure
+      //     is logged and swallowed so the call still proceeds for first-time callers)
+      if (config.MEMORY_CROSS_CALL_ENABLED) {
+        try {
+          const priorMemory = await getCallMemory(this.phoneNumber, this.campaignId);
+          if (priorMemory) {
+            this.memoryManager.loadCrossCallMemory({
+              summary: priorMemory.conversation_summary,
+              structured: priorMemory.structured_memory,
+              callCount: priorMemory.call_count,
+            });
+            logger.info(
+              {
+                callId: this.callId,
+                phoneNumber: this.phoneNumber,
+                callCount: priorMemory.call_count,
+                hasSummary: !!priorMemory.conversation_summary,
+              },
+              'Cross-call memory loaded for returning caller',
+            );
+          }
+        } catch (err) {
+          logger.warn({ err, callId: this.callId }, 'Failed to load cross-call memory — call proceeds without it');
+        }
+      }
+
       // 3. Initialize ring buffer
       this.ringBuffer = new RingBuffer(config.RING_BUFFER_SIZE_KB);
 
@@ -264,6 +304,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         }),
       );
 
+      activeCalls.inc({ language: this.agentConfig.language });
       this.emit('started', this.callId);
       void publishCallEvent({
         type: 'call.started',
@@ -302,6 +343,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       logger.error({ err, callId: this.callId }, 'Failed to start call orchestrator');
+      errorsTotal.inc({ service: 'orchestrator', type: 'start_failed' });
       this.emit('error', err);
       throw err;
     }
@@ -318,6 +360,14 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
     const durationMs = Date.now() - this.startTime;
     const durationSec = Math.round(durationMs / 1000);
+
+    // Capture before cleanup nullifies this.session
+    const language = this.agentConfig.language;
+    const abGroup = this.session?.abGroup ?? 'unknown';
+
+    callsTotal.inc({ language, result, ab_group: abGroup });
+    callDuration.observe({ language }, durationSec);
+    activeCalls.dec({ language });
 
     logger.info(
       {
@@ -399,12 +449,14 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       const cached = await getCachedAudio(cachedKey);
 
       if (cached && this.mediaSession.isOpen()) {
+        ttsCacheHits.inc();
         this.mediaSession.sendAudio(cached);
         logger.info({ callId: this.callId, bytes: cached.byteLength }, 'Greeting sent from cache');
         return Math.round(cached.byteLength / (16000 * 2) * 1000);
       }
 
       // Cache miss - synthesize directly
+      ttsCacheMisses.inc();
       const { synthesizeSpeech } = await import('./tts/azure-client.js');
       const audio = await synthesizeSpeech(
         introText,
@@ -507,6 +559,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
   private onMediaError = (error: Error): void => {
     logger.error({ err: error, callId: this.callId }, 'Media session error');
+    errorsTotal.inc({ service: 'media', type: 'session_error' });
     if (!this.stopped) {
       this.stop('error').catch((err) => {
         logger.error({ err, callId: this.callId }, 'Error during stop after media error');
@@ -636,6 +689,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       if (shouldSwitchToFull(session)) {
         const previousMode = session.llmMode;
         session.llmMode = 'full';
+        llmSwitches.inc({ from_mode: previousMode, to_mode: 'full' });
         this.emit('llmSwitched', previousMode, 'full');
         void publishCallEvent({ type: 'call.llm_switched', callId: this.callId, from: previousMode, to: 'full', ts: Date.now() });
         logger.info(
@@ -649,6 +703,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
       // 5. Calculate and log latency metric
       const totalLatencyMs = Date.now() - turnStartTime;
+      e2eLatency.observe({ language: this.agentConfig.language, llm_mode: session.llmMode }, totalLatencyMs);
       await this.safeDbOperation('insertLatencyMetric', () =>
         insertMetric(this.callId, 'turn_latency_ms', totalLatencyMs),
       );
@@ -685,6 +740,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         { err: error, callId: this.callId },
         'Error processing user turn — call continues',
       );
+      errorsTotal.inc({ service: 'orchestrator', type: 'turn_error' });
     } finally {
       // Only reset if this turn is still the active one.
       // Barge-in increments activeTurnId, so a stale finally-block won't
@@ -786,6 +842,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       const audio = await getCachedAudio(cacheKey);
 
       if (audio === null) {
+        ttsCacheMisses.inc();
         logger.warn(
           { phraseKey, cacheKey, callId: this.callId },
           'Cached phrase not found — skipping playback',
@@ -793,6 +850,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         return;
       }
 
+      ttsCacheHits.inc();
       this.mediaSession.sendAudio(audio);
 
       logger.debug(
@@ -825,12 +883,14 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       // Try cached version first
       const cached = await getCachedAudio(`${cacheKey}:${this.agentConfig.language}`);
       if (cached && this.mediaSession.isOpen()) {
+        ttsCacheHits.inc();
         this.mediaSession.sendAudio(cached);
         logger.debug(
           { fillerType, phrase, callId: this.callId },
           'Filler audio played from cache',
         );
       } else {
+        ttsCacheMisses.inc();
         logger.debug(
           { fillerType, phrase, callId: this.callId },
           'Filler cache miss — skipping filler playback',
@@ -988,6 +1048,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         { err: error, callId: this.callId, model },
         'LLM streaming failed — attempting to continue',
       );
+      errorsTotal.inc({ service: 'llm', type: error instanceof Error ? error.constructor.name : 'unknown' });
 
       logger.warn(
         {
@@ -1029,6 +1090,9 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
     // 8. Log LLM latency
     const llmLatencyMs = Date.now() - llmStartTime;
+    if (this.session) {
+      llmLatency.observe({ model, phase: this.session.phase }, llmLatencyMs);
+    }
     await this.safeDbOperation('insertLLMLatencyMetric', () =>
       insertMetric(this.callId, 'llm_total_ms', llmLatencyMs),
     );

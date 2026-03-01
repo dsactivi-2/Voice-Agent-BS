@@ -20,6 +20,11 @@ export class MemoryManager {
   };
   private turnsSinceLastSummary: number = 0;
 
+  /** Summary from a prior call — injected into every LLM context as background. */
+  private crossCallSummary: string = '';
+  /** How many times this caller has called before (for context labelling). */
+  private crossCallCount: number = 0;
+
   addTurn(turn: Turn): void {
     this.turns.push(turn);
     this.turnsSinceLastSummary++;
@@ -41,6 +46,15 @@ export class MemoryManager {
     const messages: Message[] = [];
 
     messages.push({ role: 'system', content: systemPrompt });
+
+    // Cross-call context: shown before current session summary so agent has
+    // full background on returning callers without re-reading current turns.
+    if (this.crossCallSummary) {
+      messages.push({
+        role: 'system',
+        content: `Prethodni razgovor (${this.crossCallCount}. poziv): ${this.crossCallSummary}`,
+      });
+    }
 
     if (this.summary) {
       messages.push({
@@ -109,6 +123,33 @@ export class MemoryManager {
     }
   }
 
+  /**
+   * Seeds the manager with memory from the caller's previous call.
+   * Call this once, right after construction, before any turns are added.
+   *
+   * - `summary` is prepended to every LLM context so the agent has background.
+   * - `structured` objections are merged in so the agent knows what was raised before.
+   */
+  loadCrossCallMemory(row: {
+    summary: string | null;
+    structured: StructuredMemory | null;
+    callCount: number;
+  }): void {
+    if (row.summary) {
+      this.crossCallSummary = row.summary;
+    }
+    if (row.structured?.objections?.length) {
+      // Inherit objections from previous call — avoid re-raising them from scratch
+      this.structured.objections = [...row.structured.objections];
+    }
+    this.crossCallCount = row.callCount;
+
+    logger.debug(
+      { crossCallCount: row.callCount, hasSummary: !!row.summary },
+      'Cross-call memory loaded into MemoryManager',
+    );
+  }
+
   reset(): void {
     this.turns = [];
     this.summary = '';
@@ -118,6 +159,8 @@ export class MemoryManager {
       microCommitment: false,
     };
     this.turnsSinceLastSummary = 0;
+    this.crossCallSummary = '';
+    this.crossCallCount = 0;
   }
 
   private generateSummaryAsync(): void {
