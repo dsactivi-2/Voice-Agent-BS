@@ -27,7 +27,7 @@ async function checkService(
     await Promise.race([
       fn(),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`${name} health check timeout`)), timeoutMs)
+        setTimeout(() => { reject(new Error(`${name} health check timeout`)); }, timeoutMs)
       ),
     ]);
     return { status: 'ok', latencyMs: Date.now() - start };
@@ -60,7 +60,7 @@ export function registerHealthRoute(
           signal: AbortSignal.timeout(3000),
         }).catch(() => ({ ok: false }));
         // 401 means reachable but unauthorized — fine for health check
-        if (!res.ok && 'status' in res && (res as Response).status !== 401) {
+        if (!res.ok && 'status' in res && (res).status !== 401) {
           throw new Error('Deepgram unreachable');
         }
       }, 3000),
@@ -72,7 +72,7 @@ export function registerHealthRoute(
           { method: 'GET', signal: AbortSignal.timeout(3000) }
         ).catch(() => ({ ok: false }));
         // 401 means reachable but unauthorized — fine for health check
-        if (!res.ok && 'status' in res && (res as Response).status !== 401) {
+        if (!res.ok && 'status' in res && (res).status !== 401) {
           throw new Error('Azure TTS unreachable');
         }
       }, 3000),
@@ -82,7 +82,7 @@ export function registerHealthRoute(
           signal: AbortSignal.timeout(3000),
         }).catch(() => ({ ok: false }));
         // 401 means reachable — fine for health check
-        if (!res.ok && 'status' in res && (res as Response).status !== 401) {
+        if (!res.ok && 'status' in res && (res).status !== 401) {
           throw new Error('OpenAI unreachable');
         }
       }, 3000),

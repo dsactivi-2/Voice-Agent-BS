@@ -13,7 +13,7 @@ const CHUNK_TRIGGERS = ['.', '!', '?'] as const;
 
 /** Minimum character count before a chunk is eligible for flushing.
  * Set high enough to avoid sending tiny fragments to Azure TTS. */
-const MIN_CHUNK_LENGTH = 80;
+const MIN_CHUNK_LENGTH = 40;
 
 /** Maximum milliseconds to wait before forcing a flush.
  * Reduced to keep latency reasonable for very long sentences. */

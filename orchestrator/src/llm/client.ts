@@ -33,7 +33,7 @@ function buildFallbackResponse(language: Language): LLMResponse {
 
 function createTimeoutPromise(ms: number): Promise<never> {
   return new Promise((_resolve, reject) => {
-    setTimeout(() => reject(new Error(`LLM timeout after ${ms}ms`)), ms);
+    setTimeout(() => { reject(new Error(`LLM timeout after ${ms}ms`)); }, ms);
   });
 }
 

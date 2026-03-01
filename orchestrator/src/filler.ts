@@ -28,7 +28,7 @@ export function selectFiller(session: CallSession, transcript: string): FillerTy
   }
 
   // Mini LLM mode with short input — response will be fast, no filler needed
-  if (session.llmMode === 'mini' && trimmed.length <= 30) {
+  if (session.llmMode === 'mini' && trimmed.length <= 60) {
     logger.trace(
       { llmMode: session.llmMode, transcriptLength: trimmed.length },
       'Filler skipped: mini LLM with short input',

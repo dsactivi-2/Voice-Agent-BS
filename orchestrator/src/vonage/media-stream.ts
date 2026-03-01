@@ -37,6 +37,8 @@ export interface VonageMediaStreamEvents {
 interface VonageWebSocketMetadata {
   event?: string;
   'content-type'?: string;
+  /** Vonage call UUID — present in the top-level metadata object. */
+  uuid?: string;
   headers?: Record<string, string>;
 }
 
@@ -196,9 +198,13 @@ export class VonageMediaSession extends EventEmitter<VonageMediaStreamEvents> {
 
       this.metadataReceived = true;
 
-      // Extract call_id from headers if present
+      // Priority 1: explicit call_id in custom headers (injected via NCCO WebSocket URI)
+      // Priority 2: Vonage's own uuid field at the metadata top-level
+      // Priority 3: keep existing callId (set via constructor param or remain null)
       if (metadata.headers?.['call_id']) {
         this.callId = metadata.headers['call_id'];
+      } else if (metadata.uuid) {
+        this.callId = metadata.uuid;
       }
 
       // Extract content type

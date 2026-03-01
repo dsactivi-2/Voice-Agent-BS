@@ -65,15 +65,17 @@ describe('selectFiller', () => {
     expect(result).toBeNull();
   });
 
-  it('returns null for mini LLM mode with text up to 30 chars', () => {
+  it('returns null for mini LLM mode with text up to 60 chars', () => {
     const session = createSession({ llmMode: 'mini' });
+    // 24 chars — well within the 60-char threshold
     const result = selectFiller(session, 'Koliko to kosta mjesecno');
     expect(result).toBeNull();
   });
 
-  it('returns filler for mini LLM mode with text over 30 chars', () => {
+  it('returns filler for mini LLM mode with text over 60 chars', () => {
     const session = createSession({ llmMode: 'mini' });
-    const result = selectFiller(session, 'Mozete li mi objasniti malo vise o tome');
+    // 65 chars — exceeds the 60-char threshold so filler is needed
+    const result = selectFiller(session, 'Mozete li mi objasniti malo vise o vasoj usluzi i uslovima rada');
     expect(result).not.toBeNull();
   });
 

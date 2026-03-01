@@ -9,6 +9,7 @@ import { registerMetricsRoute } from './metrics/prometheus.js';
 import { setupGracefulShutdown } from './graceful-shutdown.js';
 import { createTelephonyProvider } from './telephony/factory.js';
 import type { TelephonyEvents } from './telephony/provider.js';
+import type { CallResult } from './types.js';
 import type { FastifyRequest } from 'fastify';
 import { CallOrchestrator } from './call-orchestrator.js';
 import { routeVonageCall } from './agents/language-router.js';
@@ -140,7 +141,9 @@ export async function createServer(deps: ServerDependencies) {
       const orchestrator = activeOrchestrators.get(callId);
       if (orchestrator) {
         activeOrchestrators.delete(callId);
-        orchestrator.stop('success').catch((err: Error) => {
+        const validResults = new Set<string>(['success', 'no_answer', 'rejected', 'error', 'timeout']);
+        const callResult: CallResult = validResults.has(reason) ? (reason as CallResult) : 'success';
+        orchestrator.stop(callResult).catch((err: Error) => {
           logger.error({ err, callId }, 'Error stopping orchestrator on call end');
         });
       }
@@ -202,7 +205,7 @@ export async function createServer(deps: ServerDependencies) {
     server: app,
     getActiveCalls,
     closeFns: [
-      { name: 'redis', fn: async () => deps.redis.disconnect() },
+      { name: 'redis', fn: async () => { deps.redis.disconnect(); } },
       { name: 'postgres', fn: async () => { await deps.dbPool.end(); } },
     ],
   });

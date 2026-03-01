@@ -249,7 +249,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       };
 
       // Non-blocking: greeting plays immediately while DG handshakes in background
-      this.asrClient.connect().then(replayRingBuffer).catch((error) => {
+      this.asrClient.connect().then(replayRingBuffer).catch((error: unknown) => {
         logger.error({ err: error, callId: this.callId }, 'Deepgram ASR failed to connect');
       });
       this.asrClient.on('reconnected', replayRingBuffer);
@@ -299,8 +299,8 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
           phoneNumber: this.phoneNumber,
           language: this.agentConfig.language,
           campaignId: this.campaignId,
-          abGroup: this.session!.abGroup,
-          llmModeFinal: this.session!.llmMode,
+          abGroup: this.session?.abGroup ?? 'default',
+          llmModeFinal: this.session?.llmMode ?? 'mini',
         }),
       );
 
@@ -312,8 +312,8 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         phoneNumber: this.phoneNumber,
         language: this.agentConfig.language,
         campaignId: this.campaignId,
-        abGroup: this.session!.abGroup,
-        llmMode: this.session!.llmMode,
+        abGroup: this.session.abGroup,
+        llmMode: this.session.llmMode,
         ts: Date.now(),
       });
 
@@ -401,8 +401,8 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
             phoneNumber: this.phoneNumber,
             language: this.agentConfig.language,
             campaignId: this.campaignId,
-            conversationSummary: this.memoryManager!.getSummary(),
-            structuredMemory: this.memoryManager!.getStructuredMemory(),
+            conversationSummary: this.memoryManager?.getSummary() ?? '',
+            structuredMemory: this.memoryManager?.getStructuredMemory() ?? null,
             outcome: result,
             sentimentScore: avgInterest,
           }),
@@ -551,7 +551,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
   private onMediaStop = (): void => {
     if (!this.stopped) {
       logger.info({ callId: this.callId }, 'Media stream stopped — ending call');
-      this.stop('no_answer').catch((err) => {
+      this.stop('no_answer').catch((err: unknown) => {
         logger.error({ err, callId: this.callId }, 'Error during stop after media stream end');
       });
     }
@@ -561,7 +561,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     logger.error({ err: error, callId: this.callId }, 'Media session error');
     errorsTotal.inc({ service: 'media', type: 'session_error' });
     if (!this.stopped) {
-      this.stop('error').catch((err) => {
+      this.stop('error').catch((err: unknown) => {
         logger.error({ err, callId: this.callId }, 'Error during stop after media error');
       });
     }
@@ -572,7 +572,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
   // ════════════════════════════════════════════════════════════════
 
   private onUserFinishedSpeaking = (transcript: string): void => {
-    this.handleUserFinishedSpeaking(transcript).catch((error) => {
+    this.handleUserFinishedSpeaking(transcript).catch((error: unknown) => {
       logger.error(
         { err: error, callId: this.callId, transcript },
         'Error handling user finished speaking',
@@ -585,7 +585,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
   };
 
   private onSilenceTimeout = (type: 'ask' | 'end'): void => {
-    this.handleSilenceTimeout(type).catch((error) => {
+    this.handleSilenceTimeout(type).catch((error: unknown) => {
       logger.error(
         { err: error, callId: this.callId, type },
         'Error handling silence timeout',
@@ -594,7 +594,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
   };
 
   private onSilencePressure = (): void => {
-    this.handleSilencePressure().catch((error) => {
+    this.handleSilencePressure().catch((error: unknown) => {
       logger.error(
         { err: error, callId: this.callId },
         'Error handling silence pressure',
@@ -1106,7 +1106,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         text: fullResponseText,
         interestScore: llmResponse?.interest_score,
         complexityScore: llmResponse?.complexity_score,
-        llmMode: this.session!.llmMode,
+        llmMode: this.session.llmMode,
         latencyMs: llmLatencyMs,
         timestamp: new Date(),
       };
@@ -1121,7 +1121,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
           text: fullResponseText,
           interestScore: llmResponse?.interest_score,
           complexityScore: llmResponse?.complexity_score,
-          llmMode: this.session!.llmMode,
+          llmMode: this.session?.llmMode ?? 'mini',
           latencyMs: llmLatencyMs,
         }),
       );

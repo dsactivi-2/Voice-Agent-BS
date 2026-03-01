@@ -200,7 +200,7 @@ export function createEventHandler(callbacks?: VonageWebhookCallbacks): RouteHan
   ): Promise<void> {
     // --- Signature verification (POST only) ---
     if (request.method === 'POST' && config.VONAGE_SIGNATURE_SECRET) {
-      const authHeader = request.headers['authorization'] as string | undefined;
+      const authHeader = request.headers['authorization'];
       if (!verifyVonageSignature(authHeader, config.VONAGE_SIGNATURE_SECRET)) {
         logger.warn({ ip: request.ip }, 'Vonage webhook signature verification failed');
         await reply.status(401).send({ error: 'Unauthorized' });

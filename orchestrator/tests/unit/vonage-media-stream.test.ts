@@ -177,7 +177,7 @@ describe('VonageMediaSession metadata parsing', () => {
     });
   });
 
-  it('falls back to unknown when headers missing call_id', async () => {
+  it('falls back to unknown when neither headers.call_id nor uuid is present', async () => {
     const { VonageMediaSession } = await load();
     const ws = makeWs();
     const session = new VonageMediaSession(ws);
@@ -194,6 +194,67 @@ describe('VonageMediaSession metadata parsing', () => {
       callId: 'unknown',
       contentType: 'audio/l16;rate=16000',
     });
+  });
+
+  it('M1: uses top-level uuid when headers has no call_id', async () => {
+    const { VonageMediaSession } = await load();
+    const ws = makeWs();
+    const session = new VonageMediaSession(ws);
+    const onStart = vi.fn();
+    session.on('start', onStart);
+
+    // Vonage standard metadata format — uuid at top level, no custom call_id in headers
+    const metadata = JSON.stringify({
+      event: 'websocket:connected',
+      'content-type': 'audio/l16;rate=16000',
+      uuid: 'CON-abc123-def456',
+      headers: {},
+    });
+    ws.emit('message', Buffer.from(metadata));
+
+    expect(onStart).toHaveBeenCalledWith({
+      callId: 'CON-abc123-def456',
+      contentType: 'audio/l16;rate=16000',
+    });
+
+    // getCallId() should also return the uuid
+    expect(session.getCallId()).toBe('CON-abc123-def456');
+  });
+
+  it('M1: prefers headers.call_id over top-level uuid', async () => {
+    const { VonageMediaSession } = await load();
+    const ws = makeWs();
+    const session = new VonageMediaSession(ws);
+    const onStart = vi.fn();
+    session.on('start', onStart);
+
+    // Both present — headers.call_id wins (it's our custom injected value)
+    const metadata = JSON.stringify({
+      event: 'websocket:connected',
+      'content-type': 'audio/l16;rate=16000',
+      uuid: 'CON-vonage-uuid',
+      headers: { call_id: 'our-call-id-from-ncco' },
+    });
+    ws.emit('message', Buffer.from(metadata));
+
+    expect(onStart).toHaveBeenCalledWith({
+      callId: 'our-call-id-from-ncco',
+      contentType: 'audio/l16;rate=16000',
+    });
+  });
+
+  it('M1: uuid extracted from metadata is available via getCallId()', async () => {
+    const { VonageMediaSession } = await load();
+    const ws = makeWs();
+    const session = new VonageMediaSession(ws);
+
+    const metadata = JSON.stringify({
+      uuid: 'CON-get-call-id-test',
+      'content-type': 'audio/l16;rate=16000',
+    });
+    ws.emit('message', Buffer.from(metadata));
+
+    expect(session.getCallId()).toBe('CON-get-call-id-test');
   });
 
   it('emits audio event for binary frames after metadata', async () => {

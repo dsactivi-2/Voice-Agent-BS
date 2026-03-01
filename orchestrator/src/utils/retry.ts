@@ -21,7 +21,8 @@ export async function withRetry<T>(
         throw error;
       }
 
-      const delay = baseDelayMs * Math.pow(2, attempt);
+      const cap = baseDelayMs * Math.pow(2, attempt);
+      const delay = Math.floor(Math.random() * cap);
       logger.warn({ service, attempt, delay, error }, 'Retrying after failure');
       await sleep(delay);
     }

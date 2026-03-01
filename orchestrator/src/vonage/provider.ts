@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { logger } from '../utils/logger.js';
 import { config } from '../config.js';
-import { updateCallResult } from '../db/queries.js';
 import { canCallNumber, markCallMade } from '../session/anti-loop.js';
 import { incrementActiveCalls, decrementActiveCalls } from '../server.js';
 import { VonageMediaSession } from './media-stream.js';
@@ -64,11 +63,11 @@ export class VonageProvider implements TelephonyProvider {
       onCallStarted: async (uuid, from, to, direction) => {
         await this.handleCallStarted(uuid, from, to, direction);
       },
-      onCallAnswered: async (uuid, from, to) => {
+      onCallAnswered: (uuid, from, to) => {
         this.handleCallAnswered(uuid, from, to);
       },
-      onCallCompleted: async (uuid, reason, duration) => {
-        await this.handleCallCompleted(uuid, reason, duration);
+      onCallCompleted: (uuid, reason, duration) => {
+        this.handleCallCompleted(uuid, reason, duration);
       },
       onCallRinging: (uuid) => {
         logger.debug({ uuid }, 'Vonage call ringing');
@@ -189,11 +188,11 @@ export class VonageProvider implements TelephonyProvider {
     );
   }
 
-  private async handleCallCompleted(
+  private handleCallCompleted(
     uuid: string,
     reason: string,
     duration: string,
-  ): Promise<void> {
+  ): void {
     logger.info(
       { uuid, reason, duration },
       'Vonage call completed',
