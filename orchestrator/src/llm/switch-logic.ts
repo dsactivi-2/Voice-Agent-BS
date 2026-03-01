@@ -67,8 +67,8 @@ export function assignABGroup(
     .update(phoneNumber + campaignId)
     .digest();
 
-  const firstByte = hash[0]!;
+  const firstByte = hash[0] ?? 0;
   const bucket = firstByte % 3;
 
-  return AB_GROUPS[bucket]!;
+  return AB_GROUPS[bucket] ?? 'mini_only';
 }

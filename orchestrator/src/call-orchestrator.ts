@@ -299,7 +299,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
           phoneNumber: this.phoneNumber,
           language: this.agentConfig.language,
           campaignId: this.campaignId,
-          abGroup: this.session?.abGroup ?? 'default',
+          abGroup: this.session?.abGroup ?? 'mini_only',
           llmModeFinal: this.session?.llmMode ?? 'mini',
         }),
       );
@@ -402,7 +402,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
             language: this.agentConfig.language,
             campaignId: this.campaignId,
             conversationSummary: this.memoryManager?.getSummary() ?? '',
-            structuredMemory: this.memoryManager?.getStructuredMemory() ?? null,
+            structuredMemory: this.memoryManager?.getStructuredMemory() ?? undefined,
             outcome: result,
             sentimentScore: avgInterest,
           }),

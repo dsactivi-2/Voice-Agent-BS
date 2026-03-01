@@ -139,7 +139,8 @@ export async function initiateOutboundCall(
   );
 
   // Extract UUID from the Vonage response
-  const uuid = String((callResponse as Record<string, unknown>)['uuid'] ?? '');
+  const rawUuid = (callResponse as Record<string, unknown>)['uuid'];
+  const uuid = typeof rawUuid === 'string' ? rawUuid : '';
 
   if (!uuid) {
     throw new Error('Vonage API returned no call UUID');

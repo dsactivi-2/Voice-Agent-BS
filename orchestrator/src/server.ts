@@ -130,7 +130,7 @@ export async function createServer(deps: ServerDependencies) {
         .then(() => {
           logger.info({ callId, latencyMs: Date.now() - orchestratorStartMs }, 'CallOrchestrator started successfully');
         })
-        .catch((err: Error) => {
+        .catch((err: unknown) => {
           logger.error({ err, callId, latencyMs: Date.now() - orchestratorStartMs }, 'CallOrchestrator failed to start');
           activeOrchestrators.delete(callId);
         });
@@ -143,7 +143,7 @@ export async function createServer(deps: ServerDependencies) {
         activeOrchestrators.delete(callId);
         const validResults = new Set<string>(['success', 'no_answer', 'rejected', 'error', 'timeout']);
         const callResult: CallResult = validResults.has(reason) ? (reason as CallResult) : 'success';
-        orchestrator.stop(callResult).catch((err: Error) => {
+        orchestrator.stop(callResult).catch((err: unknown) => {
           logger.error({ err, callId }, 'Error stopping orchestrator on call end');
         });
       }
@@ -160,7 +160,7 @@ export async function createServer(deps: ServerDependencies) {
       const orchestrator = activeOrchestrators.get(callId);
       if (orchestrator) {
         activeOrchestrators.delete(callId);
-        orchestrator.stop('error').catch((err: Error) => {
+        orchestrator.stop('error').catch((err: unknown) => {
           logger.error({ err, callId }, 'Error stopping orchestrator on telephony error');
         });
       }
@@ -185,14 +185,14 @@ export async function createServer(deps: ServerDependencies) {
   app.post('/api/calls/outbound', async (req, reply) => {
     const parsed = outboundBodySchema.safeParse(req.body);
     if (!parsed.success) {
-      return reply.status(400).send({ error: 'Invalid request', details: parsed.error.flatten() });
+      return reply.status(400).send({ error: 'Invalid request', details: z.treeifyError(parsed.error) });
     }
 
     const { phoneNumber, language, campaignId } = parsed.data;
 
     try {
       const result = await initiateOutboundCall(phoneNumber, language, campaignId);
-      return reply.status(200).send({ success: true, ...result });
+      return await reply.status(200).send({ success: true, ...result });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error({ err, phoneNumber, campaignId }, 'Outbound call failed');
@@ -205,7 +205,7 @@ export async function createServer(deps: ServerDependencies) {
     server: app,
     getActiveCalls,
     closeFns: [
-      { name: 'redis', fn: async () => { deps.redis.disconnect(); } },
+      { name: 'redis', fn: () => { deps.redis.disconnect(); return Promise.resolve(); } },
       { name: 'postgres', fn: async () => { await deps.dbPool.end(); } },
     ],
   });

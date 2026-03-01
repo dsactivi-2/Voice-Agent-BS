@@ -25,10 +25,6 @@ declare module 'telnyx' {
     create(params: CallCreateParams): Promise<CallResponse>;
   }
 
-  interface TelnyxInstance {
-    calls: Calls;
-  }
-
   class Telnyx {
     constructor(apiKey: string);
     calls: Calls;

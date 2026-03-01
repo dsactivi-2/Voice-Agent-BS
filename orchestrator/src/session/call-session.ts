@@ -1,5 +1,5 @@
 import { logger } from '../utils/logger.js';
-import type { CallSession, Phase, Language, LLMMode, ABGroup, StructuredMemory } from '../types.js';
+import type { CallSession, Phase, Language, LLMMode, ABGroup } from '../types.js';
 
 /** Maximum call duration in milliseconds (9 minutes). */
 const MAX_CALL_DURATION_MS = 9 * 60 * 1000;

@@ -186,7 +186,8 @@ export async function initiateOutboundCall(
 
   // Extract call_control_id from the Telnyx response
   const callData = callResponse.data as Record<string, unknown>;
-  const callControlId = String(callData['call_control_id'] ?? '');
+  const rawId = callData['call_control_id'];
+  const callControlId = typeof rawId === 'string' ? rawId : '';
 
   if (!callControlId) {
     throw new Error('Telnyx API returned no call_control_id');

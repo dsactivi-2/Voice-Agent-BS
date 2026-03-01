@@ -21,6 +21,13 @@ export interface DeepgramASRClientEvents {
   reconnected: [];
 }
 
+/** Raw Deepgram SDK transcript event shape (SDK types it as any). */
+interface DeepgramResult {
+  channel?: { alternatives?: Array<{ transcript?: string; confidence?: number }> };
+  is_final?: boolean;
+  speech_final?: boolean;
+}
+
 /** Exponential backoff delays for reconnect attempts (ms). */
 const RECONNECT_DELAYS_MS = [500, 1000, 2000] as const;
 /** Maximum reconnect attempts before giving up. */
@@ -140,7 +147,8 @@ export class DeepgramASRClient extends EventEmitter<DeepgramASRClientEvents> {
       });
 
       this.liveClient.on(LiveTranscriptionEvents.Transcript, (data) => {
-        const channel = data.channel;
+        const result = data as DeepgramResult;
+        const channel = result.channel;
         if (!channel) return;
 
         const firstAlt = channel.alternatives?.[0];
@@ -149,8 +157,8 @@ export class DeepgramASRClient extends EventEmitter<DeepgramASRClientEvents> {
         const transcript = firstAlt.transcript;
         if (!transcript || transcript.trim().length === 0) return;
 
-        const isFinal = data.is_final ?? false;
-        const speechFinal = data.speech_final ?? false;
+        const isFinal = result.is_final ?? false;
+        const speechFinal = result.speech_final ?? false;
         const confidence = firstAlt.confidence ?? 0;
 
         logger.debug(
@@ -225,7 +233,7 @@ export class DeepgramASRClient extends EventEmitter<DeepgramASRClientEvents> {
         resolve();
       });
 
-      this.liveClient.finish();
+      this.liveClient.requestClose();
 
       // Force-resolve after 3s to avoid hanging
       const forceTimer = setTimeout(() => {
@@ -265,20 +273,22 @@ export class DeepgramASRClient extends EventEmitter<DeepgramASRClientEvents> {
       'Deepgram: scheduling reconnect',
     );
 
-    setTimeout(async () => {
-      if (this.closing) return;
-      try {
-        await this.connect();
-        this.reconnectAttempts = 0;
-        logger.info({ language: this.language }, 'Deepgram: reconnected successfully');
-        this.emit('reconnected');
-      } catch (error) {
-        logger.warn(
-          { err: error, language: this.language, attempt: this.reconnectAttempts },
-          'Deepgram: reconnect attempt failed',
-        );
-        this.scheduleReconnect();
-      }
+setTimeout(() => {
+      void (async () => {
+        if (this.closing) return;
+        try {
+          await this.connect();
+          this.reconnectAttempts = 0;
+          logger.info({ language: this.language }, 'Deepgram: reconnected successfully');
+          this.emit('reconnected');
+        } catch (error) {
+          logger.warn(
+            { err: error, language: this.language, attempt: this.reconnectAttempts },
+            'Deepgram: reconnect attempt failed',
+          );
+          this.scheduleReconnect();
+        }
+      })();
     }, delayMs);
   }
 }

@@ -145,7 +145,7 @@ async function handleCallInitiated(payload: TelnyxCallPayload): Promise<void> {
   );
 }
 
-async function handleCallAnswered(payload: TelnyxCallPayload): Promise<void> {
+function handleCallAnswered(payload: TelnyxCallPayload): void {
   const { call_control_id, from, to } = payload;
 
   logger.info(
@@ -309,7 +309,7 @@ export function createWebhookHandler(): RouteHandlerMethod {
 
         case 'call.answered': {
           const callPayload = telnyxCallPayloadSchema.parse(data.payload);
-          await handleCallAnswered(callPayload);
+          handleCallAnswered(callPayload);
           break;
         }
 

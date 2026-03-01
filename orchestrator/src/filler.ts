@@ -71,7 +71,7 @@ export function getFillerPhrase(agent: AgentConfig, fillerType: FillerType): str
   }
 
   const index = Math.floor(Math.random() * phrases.length);
-  const phrase = phrases[index]!;
+  const phrase = phrases[index] ?? phrases[0] ?? fillerType;
 
   logger.trace({ fillerType, phrase }, 'Filler phrase selected');
 

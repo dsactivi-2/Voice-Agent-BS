@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import { logger } from '../utils/logger.js';
-import { config } from '../config.js';
 import { createWebhookHandler } from '../telnyx/webhook.js';
 import {
   MediaStreamSession,
@@ -98,7 +97,7 @@ export class TelnyxProvider implements TelephonyProvider {
   // Hang up a call
   // -------------------------------------------------------------------------
 
-  async hangUp(callId: string): Promise<void> {
+  hangUp(callId: string): Promise<void> {
     const session = this.activeSessions.get(callId);
 
     if (session) {
@@ -111,6 +110,7 @@ export class TelnyxProvider implements TelephonyProvider {
     // For explicit hangup, we would use the Telnyx SDK:
     // await telnyx.calls.hangup(callId);
     logger.info({ callId }, 'Telnyx call session closed');
+    return Promise.resolve();
   }
 
   // -------------------------------------------------------------------------
@@ -136,7 +136,7 @@ export class TelnyxProvider implements TelephonyProvider {
       }
     });
 
-    session.on('stop', (info) => {
+    session.on('stop', (_info) => {
       const callControlId = session.getCallControlId();
       if (callControlId) {
         logger.info({ callControlId }, 'Telnyx media session stopped');

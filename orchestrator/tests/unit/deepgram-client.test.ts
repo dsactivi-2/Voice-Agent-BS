@@ -49,6 +49,7 @@ import { DeepgramASRClient } from '../../src/deepgram/client.js';
 class MockLiveClient extends EventEmitter {
   send = vi.fn();
   finish = vi.fn();
+  requestClose = vi.fn();
 }
 
 // ---------------------------------------------------------------------------
@@ -200,18 +201,18 @@ describe('DeepgramASRClient', () => {
     expect(errorHandler).toHaveBeenCalledWith(wsError);
   });
 
-  it('close calls finish on live client and resolves', async () => {
+  it('close calls requestClose on live client and resolves', async () => {
     const client = new DeepgramASRClient('bs', 'test-key');
     await connectClient(client);
 
-    // When finish() is called, simulate the SDK emitting the close event
-    liveMock.current.finish.mockImplementation(() => {
+    // When requestClose() is called, simulate the SDK emitting the close event
+    liveMock.current.requestClose.mockImplementation(() => {
       process.nextTick(() => liveMock.current.emit('close'));
     });
 
     await client.close();
 
-    expect(liveMock.current.finish).toHaveBeenCalled();
+    expect(liveMock.current.requestClose).toHaveBeenCalled();
     expect(client.isConnected()).toBe(false);
   });
 
