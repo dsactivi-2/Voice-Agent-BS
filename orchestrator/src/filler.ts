@@ -65,7 +65,7 @@ export function selectFiller(session: CallSession, transcript: string): FillerTy
 export function getFillerPhrase(agent: AgentConfig, fillerType: FillerType): string {
   const phrases = agent.fillerLibrary[fillerType];
 
-  if (!phrases || phrases.length === 0) {
+  if (phrases.length === 0) {
     logger.error({ fillerType }, 'Filler library has no phrases for the requested type');
     throw new Error(`No filler phrases available for type: ${fillerType}`);
   }

@@ -57,7 +57,7 @@ export async function* streamLLMResponse(
   let fullContent = '';
 
   for await (const chunk of stream) {
-    const delta = chunk.choices[0]?.delta?.content;
+    const delta = chunk.choices[0]?.delta.content;
     if (delta) {
       fullContent += delta;
       yield delta;

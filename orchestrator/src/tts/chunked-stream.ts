@@ -225,7 +225,6 @@ export class ChunkedTTSPipeline extends EventEmitter<ChunkedTTSPipelineEvents> {
       const voiceArg = this.voice.length > 0 ? this.voice : undefined;
       const audio = await synthesizeSpeech(text, this.language, voiceArg);
 
-      if (this.destroyed) return;
 
       // Cache the result (fire-and-forget, errors are logged inside setCachedAudio)
       setCachedAudio(key, audio).catch((err: unknown) => {

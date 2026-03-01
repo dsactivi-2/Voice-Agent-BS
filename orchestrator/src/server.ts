@@ -64,7 +64,7 @@ export async function createServer(deps: ServerDependencies) {
     global: true,
     max: 200,
     timeWindow: '1 minute',
-    keyGenerator: (req: FastifyRequest): string => req.ip ?? 'unknown',
+    keyGenerator: (req: FastifyRequest): string => req.ip,
     // Skip health checks and WebSocket upgrades
     allowList: (req: FastifyRequest): boolean =>
       req.url === '/health' || req.headers['upgrade'] === 'websocket',

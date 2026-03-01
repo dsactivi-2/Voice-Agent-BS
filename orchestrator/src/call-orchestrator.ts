@@ -320,7 +320,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       // 10. Send initial greeting — 800ms pause simulates human pickup
       await new Promise(resolve => setTimeout(resolve, 800));
       this.isBotSpeaking = true;
-      this.turnTakingManager?.setBotSpeaking(true);
+      this.turnTakingManager.setBotSpeaking(true);
       const greetingDurationMs = await this.sendGreeting();
       // Keep isBotSpeaking=true until Vonage finishes playing the greeting audio.
       // Clearing it early causes the TTS echo to appear as user speech.
@@ -328,8 +328,8 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         await new Promise(resolve => setTimeout(resolve, greetingDurationMs + 300));
       }
       this.isBotSpeaking = false;
-      this.turnTakingManager?.setBotSpeaking(false);
-      this.turnTakingManager?.restartSilenceTimer();
+      this.turnTakingManager.setBotSpeaking(false);
+      this.turnTakingManager.restartSilenceTimer();
 
       logger.info(
         {
@@ -439,7 +439,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
    * agent configured intro phrase. Falls back silently on error.
    */
   private async sendGreeting(): Promise<number> {
-    const introText = this.agentConfig.cachedPhrases?.['intro'];
+    const introText = this.agentConfig.cachedPhrases['intro'];
     if (!introText || this.stopped || !this.mediaSession.isOpen()) return 0;
 
     try {
@@ -977,29 +977,16 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         signal: this.currentLLMAbortController.signal,
       });
 
-      let firstTokenReceived = false;
-
       // State machine to extract only reply_text from streaming JSON
       let jsonTTSBuffer = '';
       let jsonTTSState: 'seeking' | 'in_value' | 'done' = 'seeking';
       let jsonTTSEscaped = false;
 
       let result = await generator.next();
-
-      while (!result.done) {
-        if (this.stopped) break;
-
+      for (;;) {
+        if (result.done) { break; }
         const token = result.value;
         fullResponseText += token;
-
-        // Log first token latency
-        if (!firstTokenReceived) {
-          firstTokenReceived = true;
-          const firstTokenMs = Date.now() - llmStartTime;
-          await this.safeDbOperation('insertFirstTokenMetric', () =>
-            insertMetric(this.callId, 'llm_first_token_ms', firstTokenMs),
-          );
-        }
 
         // Feed only the reply_text value from the JSON response to TTS.
         // The LLM streams raw JSON tokens — we must skip keys/syntax.
@@ -1014,19 +1001,19 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
               jsonTTSState = 'in_value';
               const captured = match[1] ?? '';
               jsonTTSBuffer = '';
-              if (captured) this.currentTTSPipeline?.addTokens(captured);
+              if (captured) this.currentTTSPipeline.addTokens(captured);
             }
-          } else if (jsonTTSState === 'in_value') {
+          } else {
             if (jsonTTSEscaped) {
               const unescaped = ch === 'n' ? '\n' : ch === 't' ? '\t' : ch;
-              this.currentTTSPipeline?.addTokens(unescaped);
+              this.currentTTSPipeline.addTokens(unescaped);
               jsonTTSEscaped = false;
             } else if (ch === '\\') {
               jsonTTSEscaped = true;
             } else if (ch === '"') {
               jsonTTSState = 'done';
             } else {
-              this.currentTTSPipeline?.addTokens(ch);
+              this.currentTTSPipeline.addTokens(ch);
             }
           }
         }
@@ -1035,14 +1022,11 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       }
 
       // The generator returns the parsed LLMResponse when done
-      if (result.done && result.value) {
-        llmResponse = result.value;
-      }
-
+      llmResponse = result.value;
       // 6. Flush remaining TTS buffer
-      if (this.currentTTSPipeline) {
-        await this.currentTTSPipeline.flush();
-      }
+      await this.currentTTSPipeline.flush();
+
+
     } catch (error) {
       logger.error(
         { err: error, callId: this.callId, model },
@@ -1061,22 +1045,22 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       );
 
       // Try to flush whatever we have
-      if (this.currentTTSPipeline) {
-        try {
-          await this.currentTTSPipeline.flush();
-        } catch (flushErr) {
-          logger.error({ err: flushErr, callId: this.callId }, 'TTS flush after LLM error also failed');
-        }
+      try {
+        await this.currentTTSPipeline.flush();
+      } catch (flushErr) {
+        logger.error({ err: flushErr, callId: this.callId }, 'TTS flush after LLM error also failed');
       }
+
+
     } finally {
       // Clear the LLM abort controller for this turn
       this.currentLLMAbortController = null;
 
       // Clean up TTS pipeline for this turn
-      if (this.currentTTSPipeline) {
-        this.currentTTSPipeline.destroy();
-        this.currentTTSPipeline = null;
-      }
+      this.currentTTSPipeline.destroy();
+      this.currentTTSPipeline = null;
+
+
 
       // Mark bot as no longer speaking
       this.isBotSpeaking = false;
@@ -1084,21 +1068,21 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     }
 
     // 7. Process the LLM response (update session state)
-    if (llmResponse && this.session) {
+    if (llmResponse) {
       this.updateSessionFromResponse(llmResponse, transcript);
     }
 
     // 8. Log LLM latency
     const llmLatencyMs = Date.now() - llmStartTime;
-    if (this.session) {
-      llmLatency.observe({ model, phase: this.session.phase }, llmLatencyMs);
-    }
+    llmLatency.observe({ model, phase: this.session.phase }, llmLatencyMs);
+
+
     await this.safeDbOperation('insertLLMLatencyMetric', () =>
       insertMetric(this.callId, 'llm_total_ms', llmLatencyMs),
     );
 
     // 9. Log bot turn to memory manager and DB
-    if (fullResponseText.length > 0 && this.memoryManager) {
+    if (fullResponseText.length > 0) {
       const botTurn: Turn = {
         callId: this.callId,
         turnNumber: this.turnCounter,

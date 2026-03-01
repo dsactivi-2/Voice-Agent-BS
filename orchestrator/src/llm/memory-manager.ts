@@ -64,10 +64,10 @@ export class MemoryManager {
     }
 
     const hasStructuredData =
-      this.structured.customerName ||
-      this.structured.currentProvider ||
-      this.structured.budgetRange ||
-      (this.structured.interestedIn && this.structured.interestedIn.length > 0) ||
+      this.structured.customerName ??
+      this.structured.currentProvider ??
+      this.structured.budgetRange ??
+      (this.structured.interestedIn && this.structured.interestedIn.length > 0) ??
       this.structured.objections.length > 0;
 
     if (hasStructuredData) {
@@ -138,7 +138,7 @@ export class MemoryManager {
     if (row.summary) {
       this.crossCallSummary = row.summary;
     }
-    if (row.structured?.objections?.length) {
+    if (row.structured?.objections.length) {
       // Inherit objections from previous call — avoid re-raising them from scratch
       this.structured.objections = [...row.structured.objections];
     }
@@ -182,7 +182,7 @@ export class MemoryManager {
 
       Promise.resolve(result)
         .then((completion) => {
-          const content = completion.choices[0]?.message?.content;
+          const content = completion.choices[0]?.message.content;
           if (content) {
             this.summary = content;
             logger.info(
