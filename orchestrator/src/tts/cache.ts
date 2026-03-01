@@ -45,8 +45,8 @@ const STANDARD_PHRASES: Record<string, Record<Language, string>> = {
     'sr-RS': 'Jeste li jos tu?',
   },
   still_there_sr: {
-    'bs-BA': 'Jeste li jos tu?',
-    'sr-RS': 'Jeste li jos tu?',
+    'bs-BA': 'Da li ste jos tu?',
+    'sr-RS': 'Da li ste jos tu?',
   },
   // Filler phrases — must match agent fillerLibrary options
   filler_acknowledge_bs: {

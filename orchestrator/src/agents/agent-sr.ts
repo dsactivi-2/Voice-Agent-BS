@@ -85,7 +85,7 @@ VAZNO: Ako osoba jasno odbija dva puta zaredom, ljubazno se pozdravi: "Razumem p
     intro: 'Dobar dan, Vesna ovde iz Step Tu Džob-a.',
     repeat: 'Mozete li da ponovite, molim vas?',
     goodbye: 'Razumem potpuno. Ako se situacija promeni, tu smo. Prijatno!',
-    still_there: 'Jeste li jos tu?',
+    still_there: 'Da li ste jos tu?',
     silence_followup: 'Sta mislite?',
   },
 };
