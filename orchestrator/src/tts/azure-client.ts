@@ -11,7 +11,7 @@ const DEFAULT_VOICES: Record<Language, string> = {
 };
 
 /**
- * Builds SSML markup for Azure TTS with prosody and customer-service style.
+ * Builds SSML markup for Azure TTS (no prosody, no style — natural voice default).
  *
  * @param text     - The plain text to synthesize
  * @param language - BCP-47 language tag (bs-BA or sr-RS)
@@ -43,13 +43,9 @@ export function buildSSML(text: string, language: Language, voice: string): stri
   );
 
   return [
-    `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="http://www.w3.org/2001/mstts" xml:lang="${language}">`,
+    `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${language}">`,
     `  <voice name="${voice}">`,
-    `    <mstts:express-as style="customerservice">`,
-    `      <prosody rate="-10%" pitch="+1%">`,
-    `        ${withNumbers}`,
-    `      </prosody>`,
-    `    </mstts:express-as>`,
+    `    ${withNumbers}`,
     `  </voice>`,
     `</speak>`,
   ].join('\n');

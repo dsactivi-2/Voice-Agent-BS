@@ -82,21 +82,19 @@ describe('buildSSML', () => {
     expect(ssml).toContain('</speak>');
   });
 
-  it('includes prosody tags with correct rate and pitch', () => {
+  it('does not include prosody or rate/pitch overrides (natural voice default)', () => {
     const ssml = buildSSML('Test tekst', 'sr-RS', 'sr-RS-NicholasNeural');
 
-    expect(ssml).toContain('rate="-10%"');
-    expect(ssml).toContain('pitch="+1%"');
-    expect(ssml).toContain('<prosody');
-    expect(ssml).toContain('</prosody>');
+    expect(ssml).not.toContain('<prosody');
+    expect(ssml).not.toContain('rate=');
+    expect(ssml).not.toContain('pitch=');
   });
 
-  it('includes mstts express-as customerservice style', () => {
+  it('does not include mstts express-as style (natural voice default)', () => {
     const ssml = buildSSML('Hvala', 'bs-BA', 'bs-BA-GoranNeural');
 
-    expect(ssml).toContain('xmlns:mstts="http://www.w3.org/2001/mstts"');
-    expect(ssml).toContain('<mstts:express-as style="customerservice">');
-    expect(ssml).toContain('</mstts:express-as>');
+    expect(ssml).not.toContain('xmlns:mstts');
+    expect(ssml).not.toContain('mstts:express-as');
   });
 
   it('escapes XML special characters in text', () => {
