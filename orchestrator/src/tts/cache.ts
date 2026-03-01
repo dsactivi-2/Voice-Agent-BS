@@ -7,14 +7,12 @@ import type { Language } from '../types.js';
 const KEY_PREFIX = 'tts:audio:';
 
 /**
- * Phrases pre-synthesized at startup for zero-latency playback.
- * Only the intro is pre-warmed — it must play instantly when the call connects.
- * All other phrases (fillers, goodbye, etc.) are synthesized on first use and
- * cached automatically by synthesizeChunk() for subsequent calls.
+ * Standard phrases pre-synthesized at startup, keyed by phrase identifier.
+ * Each entry maps to the text spoken for that phrase per language variant.
  */
 const STANDARD_PHRASES: Record<string, Record<Language, string>> = {
-  // Intro — must be instant; pre-warm both language voices
-  // Phonetic version avoids <sub> SSML element that causes Azure reason=1
+  // Greeting phrases — phonetic version (avoids <sub> SSML element that causes Azure reason=1)
+  // Audio plays identically to the agent's intro phrase; cache key match is what matters
   intro_bs: {
     'bs-BA': 'Dobar dan, Goran ovdje iz Step Tu Džob-a.',
     'sr-RS': 'Dobar dan, Goran ovdje iz Step Tu Džob-a.',
@@ -22,6 +20,67 @@ const STANDARD_PHRASES: Record<string, Record<Language, string>> = {
   intro_sr: {
     'bs-BA': 'Dobar dan, Vesna ovdje iz Step Tu Džob-a.',
     'sr-RS': 'Dobar dan, Vesna ovdje iz Step Tu Džob-a.',
+  },
+  // Repeat phrases — must match agent cachedPhrases.repeat
+  repeat_bs: {
+    'bs-BA': 'Mozete li ponoviti, molim vas?',
+    'sr-RS': 'Mozete li ponoviti, molim vas?',
+  },
+  repeat_sr: {
+    'bs-BA': 'Mozete li da ponovite, molim vas?',
+    'sr-RS': 'Mozete li da ponovite, molim vas?',
+  },
+  // Goodbye phrases — must match agent cachedPhrases.goodbye
+  goodbye_bs: {
+    'bs-BA': 'Razumijem potpuno. Ako se situacija promijeni, tu smo. Prijatno!',
+    'sr-RS': 'Razumijem potpuno. Ako se situacija promijeni, tu smo. Prijatno!',
+  },
+  goodbye_sr: {
+    'bs-BA': 'Razumem potpuno. Ako se situacija promeni, tu smo. Prijatno!',
+    'sr-RS': 'Razumem potpuno. Ako se situacija promeni, tu smo. Prijatno!',
+  },
+  // Silence check phrases — must match agent cachedPhrases.still_there
+  still_there_bs: {
+    'bs-BA': 'Jeste li jos tu?',
+    'sr-RS': 'Jeste li jos tu?',
+  },
+  still_there_sr: {
+    'bs-BA': 'Jeste li jos tu?',
+    'sr-RS': 'Jeste li jos tu?',
+  },
+  // Filler phrases — must match agent fillerLibrary options
+  filler_acknowledge_bs: {
+    'bs-BA': 'Razumijem...',
+    'sr-RS': 'Razumijem...',
+  },
+  filler_acknowledge_sr: {
+    'bs-BA': 'Razumem...',
+    'sr-RS': 'Razumem...',
+  },
+  filler_thinking_bs: {
+    'bs-BA': 'Samo trenutak...',
+    'sr-RS': 'Samo trenutak...',
+  },
+  filler_thinking_sr: {
+    'bs-BA': 'Samo sekund...',
+    'sr-RS': 'Samo sekund...',
+  },
+  filler_affirm_bs: {
+    'bs-BA': 'Tako je...',
+    'sr-RS': 'Tako je...',
+  },
+  filler_affirm_sr: {
+    'bs-BA': 'Da, naravno.',
+    'sr-RS': 'Da, naravno.',
+  },
+  // Silence follow-up — must match agent cachedPhrases.silence_followup
+  silence_followup_bs: {
+    'bs-BA': 'Sta mislite?',
+    'sr-RS': 'Sta mislite?',
+  },
+  silence_followup_sr: {
+    'bs-BA': 'Sta mislite?',
+    'sr-RS': 'Sta mislite?',
   },
 };
 
