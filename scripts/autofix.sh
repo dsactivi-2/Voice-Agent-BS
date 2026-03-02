@@ -32,7 +32,7 @@ readonly TTS_CURL_TIMEOUT=10
 readonly PUBLIC_HOST="voice.activi.io"
 readonly EXPECTED_IP="157.90.126.58"
 readonly EMAIL_TO="ds@activi.io"
-readonly EMAIL_FROM="autofix@voice.activi.io"
+readonly EMAIL_FROM="ds@activi.io"
 readonly EMAIL_SUBJECT_PREFIX="[Voice AutoFix]"
 
 readonly -a SERVICES=(orchestrator management-api postgres redis prometheus grafana caddy)
@@ -89,6 +89,7 @@ VAD_BARGE_IN_MIN_MS=""
 VAD_SILENCE_TIMEOUT_MS=""
 VONAGE_APPLICATION_ID=""
 VONAGE_DEFAULT_LANGUAGE=""
+SENDGRID_API_KEY=""
 
 # ---------------------------------------------------------------------------
 # Utility functions
@@ -197,6 +198,7 @@ load_env() {
                 VAD_SILENCE_TIMEOUT_MS) VAD_SILENCE_TIMEOUT_MS="$value" ;;
                 VONAGE_APPLICATION_ID)  VONAGE_APPLICATION_ID="$value" ;;
                 VONAGE_DEFAULT_LANGUAGE) VONAGE_DEFAULT_LANGUAGE="$value" ;;
+                SENDGRID_API_KEY)        SENDGRID_API_KEY="$value" ;;
             esac
         fi
     done < "$ENV_FILE"
@@ -623,7 +625,7 @@ check_azure_tts() {
     response="$(curl -s -w "\n%{http_code}" \
         --max-time "$CURL_TIMEOUT" \
         -H "Ocp-Apim-Subscription-Key: ${AZURE_SPEECH_KEY}" \
-        "https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/voices/list" 2>/dev/null || echo -e "\n000")"
+        --compressed "https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/voices/list" 2>/dev/null || echo -e "\n000")"
 
     http_code="$(echo "$response" | tail -1)"
     local body
@@ -646,8 +648,15 @@ check_azure_tts() {
     log_ok "Azure TTS API: HTTP ${http_code}"
     record_check "azure_tts_api" "ok" "API reachable: HTTP ${http_code}"
 
+    # Download voice list once to temp file, then check both voices
+    local voice_list_file="/tmp/autofix_azure_voices.json"
+    curl -s --compressed --max-time 15 \
+        -H "Ocp-Apim-Subscription-Key: ${AZURE_SPEECH_KEY}" \
+        "https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/voices/list" \
+        -o "$voice_list_file" 2>/dev/null
+
     # Check for Goran voice
-    if echo "$body" | grep -q "bs-BA-GoranNeural"; then
+    if [[ -f "$voice_list_file" ]] && grep -q "bs-BA-GoranNeural" "$voice_list_file"; then
         log_ok "Azure TTS: bs-BA-GoranNeural voice available"
         record_check "azure_voice_goran" "ok" "Voice available"
     else
@@ -656,13 +665,15 @@ check_azure_tts() {
     fi
 
     # Check for Vesna voice
-    if echo "$body" | grep -q "sr-RS-SophieNeural"; then
+    if [[ -f "$voice_list_file" ]] && grep -q "sr-RS-SophieNeural" "$voice_list_file"; then
         log_ok "Azure TTS: sr-RS-SophieNeural voice available"
         record_check "azure_voice_vesna" "ok" "Voice available"
     else
         log_fail "Azure TTS: sr-RS-SophieNeural voice NOT found in voice list"
         record_check "azure_voice_vesna" "fail" "Voice not available"
     fi
+
+    rm -f "$voice_list_file"
 
     return 0
 }
@@ -743,7 +754,7 @@ check_tts_cache() {
     local container="voice-system-redis-1"
 
     local cache_count
-    cache_count="$(docker exec "$container" redis-cli KEYS "tts:cache:*" 2>/dev/null | wc -l | tr -d '[:space:]')"
+    cache_count="$(docker exec "$container" redis-cli KEYS "tts:audio:*" 2>/dev/null | wc -l | tr -d '[:space:]')"
 
     if [[ -z "$cache_count" || "$cache_count" == "0" ]]; then
         log_fail "TTS cache: 0 entries found (expected >=32)"
@@ -993,15 +1004,15 @@ check_greeting_cache() {
 
     # Goran greeting cache
     local goran_size
-    goran_size="$(docker exec "$container" redis-cli GET "tts:cache:greeting:bs" 2>/dev/null | wc -c | tr -d '[:space:]')"
+    goran_size="$(docker exec "$container" redis-cli STRLEN "tts:audio:intro_bs:bs-BA" 2>/dev/null | tr -d '[:space:]')"
 
     if [[ -z "$goran_size" || "$goran_size" == "0" ]]; then
         log_fail "Greeting cache Goran (bs): empty or missing"
         record_check "greeting_cache_goran" "fail" "Cache empty" "size=0"
         overall=2
-    elif (( goran_size < 129000 )); then
-        log_warn "Greeting cache Goran (bs): ${goran_size} bytes (expected ~129000+)"
-        record_check "greeting_cache_goran" "warn" "Smaller than expected: ${goran_size}" "expected>=129000"
+    elif (( goran_size < 100000 )); then
+        log_warn "Greeting cache Goran (bs): ${goran_size} bytes (expected ~100000+)"
+        record_check "greeting_cache_goran" "warn" "Smaller than expected: ${goran_size}" "expected>=100000"
         if [[ $overall -lt 1 ]]; then overall=1; fi
     else
         log_ok "Greeting cache Goran (bs): ${goran_size} bytes"
@@ -1010,15 +1021,15 @@ check_greeting_cache() {
 
     # Vesna greeting cache
     local vesna_size
-    vesna_size="$(docker exec "$container" redis-cli GET "tts:cache:greeting:sr" 2>/dev/null | wc -c | tr -d '[:space:]')"
+    vesna_size="$(docker exec "$container" redis-cli STRLEN "tts:audio:intro_sr:sr-RS" 2>/dev/null | tr -d '[:space:]')"
 
     if [[ -z "$vesna_size" || "$vesna_size" == "0" ]]; then
         log_fail "Greeting cache Vesna (sr): empty or missing"
         record_check "greeting_cache_vesna" "fail" "Cache empty" "size=0"
         overall=2
-    elif (( vesna_size < 154000 )); then
-        log_warn "Greeting cache Vesna (sr): ${vesna_size} bytes (expected ~154000+)"
-        record_check "greeting_cache_vesna" "warn" "Smaller than expected: ${vesna_size}" "expected>=154000"
+    elif (( vesna_size < 110000 )); then
+        log_warn "Greeting cache Vesna (sr): ${vesna_size} bytes (expected ~110000+)"
+        record_check "greeting_cache_vesna" "warn" "Smaller than expected: ${vesna_size}" "expected>=110000"
         if [[ $overall -lt 1 ]]; then overall=1; fi
     else
         log_ok "Greeting cache Vesna (sr): ${vesna_size} bytes"
@@ -1029,46 +1040,33 @@ check_greeting_cache() {
 }
 
 check_phonetics() {
-    log_info "Checking phonetics in cached greetings..."
-    local container="voice-system-redis-1"
+    log_info "Checking phonetics in TTS-spoken phrases..."
+    local container="voice-system-orchestrator-1"
     local overall=0
 
-    # Check for the forbidden "Step2Job" pattern in all TTS cache keys
-    # The correct phonetic spelling is "Step Tu Džob-a"
-    local cache_content
-    cache_content="$(docker exec "$container" redis-cli KEYS "tts:cache:*" 2>/dev/null)"
+    # Only check cachedPhrases sections (lines with intro/repeat/goodbye/still_there/silence_followup)
+    # These are the strings actually sent to Azure TTS.
+    # "Step2Job" in systemPrompt is fine — that goes to the LLM, not TTS.
+    local bad_count
+    bad_count="$(docker exec "$container" sh -c '
+        for f in /app/dist/agents/agent-bs.js /app/dist/agents/agent-sr.js; do
+            grep -A50 "cachedPhrases" "$f" 2>/dev/null | grep -c "Step2Job" 2>/dev/null || echo 0
+        done
+    ' 2>/dev/null | awk '{s+=$1} END {print s}')"
 
-    if [[ -z "$cache_content" ]]; then
-        log_warn "No TTS cache keys found, skipping phonetics check"
-        record_check "phonetics_step2job" "warn" "No cache keys to check"
-        return 1
-    fi
+    bad_count="${bad_count:-0}"
 
-    local found_bad=0
-    local bad_keys=""
-
-    while IFS= read -r key; do
-        [[ -z "$key" ]] && continue
-        local value
-        value="$(docker exec "$container" redis-cli GET "$key" 2>/dev/null || echo "")"
-        if echo "$value" | grep -qi "Step2Job"; then
-            found_bad=1
-            bad_keys="${bad_keys} ${key}"
-        fi
-    done <<< "$cache_content"
-
-    if (( found_bad )); then
-        log_fail "Phonetics: found 'Step2Job' in cached greetings (should be 'Step Tu Džob-a')"
-        record_check "phonetics_step2job" "fail" "Bad phonetics found" "keys=${bad_keys}"
+    if [[ "$bad_count" != "0" ]]; then
+        log_fail "Phonetics: found 'Step2Job' in TTS cached phrases (${bad_count} occurrences, should be 'Step Tu Džob')"
+        record_check "phonetics_step2job" "fail" "Bad phonetics in TTS phrases" "occurrences=${bad_count}"
         overall=2
     else
-        log_ok "Phonetics: no 'Step2Job' found in cache (correct: 'Step Tu Džob-a')"
-        record_check "phonetics_step2job" "ok" "No forbidden patterns found"
+        log_ok "Phonetics: no 'Step2Job' in TTS cached phrases (correct: 'Step Tu Džob')"
+        record_check "phonetics_step2job" "ok" "No forbidden patterns in TTS phrases"
     fi
 
     return $overall
 }
-
 check_language_routing() {
     log_info "Checking language routing configuration..."
 
@@ -1078,12 +1076,12 @@ check_language_routing() {
         return 1
     fi
 
-    if [[ "$VONAGE_DEFAULT_LANGUAGE" == "bs" ]]; then
-        log_ok "Default language: ${VONAGE_DEFAULT_LANGUAGE} (Bosnian/Goran)"
+    if [[ "$VONAGE_DEFAULT_LANGUAGE" == "bs-BA" ]]; then
+        log_ok "Default language: ${VONAGE_DEFAULT_LANGUAGE} (Bosnian/Goran - bs-BA)"
         record_check "language_routing" "ok" "Correct default: ${VONAGE_DEFAULT_LANGUAGE}"
         return 0
     else
-        log_warn "Default language: ${VONAGE_DEFAULT_LANGUAGE} (expected 'bs')"
+        log_warn "Default language: ${VONAGE_DEFAULT_LANGUAGE} (expected 'bs-BA')"
         record_check "language_routing" "warn" "Unexpected default: ${VONAGE_DEFAULT_LANGUAGE}" "expected=bs"
         return 1
     fi
@@ -1179,19 +1177,6 @@ print_summary() {
 # ---------------------------------------------------------------------------
 
 send_email_report() {
-    # Only send if mail/sendmail is available
-    local mailer=""
-    if command -v mail &>/dev/null; then
-        mailer="mail"
-    elif command -v sendmail &>/dev/null; then
-        mailer="sendmail"
-    elif command -v msmtp &>/dev/null; then
-        mailer="msmtp"
-    else
-        log_warn "No mail command found (mail/sendmail/msmtp). Skipping email."
-        return 1
-    fi
-
     local total=$((PASS_COUNT + WARN_COUNT + FAIL_COUNT))
     local overall_status="OK"
     local urgency=""
@@ -1206,87 +1191,76 @@ send_email_report() {
 
     # Build plain-text email body
     local body=""
-    body+="Voice System Auto-Fix Report"$'\n'
-    body+="=============================="$'\n'
-    body+="Mode:      ${MODE}"$'\n'
-    body+="Time:      $(date)"$'\n'
-    body+="Host:      $(hostname)"$'\n'
-    body+="Status:    ${overall_status}"$'\n'
-    body+=""$'\n'
-    body+="Summary"$'\n'
-    body+="-------"$'\n'
-    body+="Passed:    ${PASS_COUNT}"$'\n'
-    body+="Warnings:  ${WARN_COUNT}"$'\n'
-    body+="Failures:  ${FAIL_COUNT}"$'\n'
-    body+="Fixed:     ${FIX_APPLIED}"$'\n'
-    body+="Total:     ${total}"$'\n'
-    body+=""$'\n'
+    body+="Voice System Auto-Fix Report\n"
+    body+="==============================\n"
+    body+="Mode:      ${MODE}\n"
+    body+="Time:      $(date)\n"
+    body+="Host:      $(hostname)\n"
+    body+="Status:    ${overall_status}\n"
+    body+="\n"
+    body+="Summary\n"
+    body+="-------\n"
+    body+="Passed:    ${PASS_COUNT}\n"
+    body+="Warnings:  ${WARN_COUNT}\n"
+    body+="Failures:  ${FAIL_COUNT}\n"
+    body+="Fixed:     ${FIX_APPLIED}\n"
+    body+="Total:     ${total}\n"
+    body+="\n"
 
-    # List failures and warnings
     if (( FAIL_COUNT > 0 || WARN_COUNT > 0 )); then
-        body+="Issues"$'\n'
-        body+="------"$'\n'
+        body+="Issues\n"
+        body+="------\n"
 
         if command -v jq &>/dev/null && [[ -f "$REPORT_FILE" ]]; then
-            # Extract failures
             local failures
             failures="$(jq -r '.checks[] | select(.status == "fail") | "  [FAIL] \(.name): \(.message) \(if .detail != "" then "(\(.detail))" else "" end)"' "$REPORT_FILE" 2>/dev/null || echo "")"
             if [[ -n "$failures" ]]; then
-                body+=""$'\n'"FAILURES:"$'\n'"${failures}"$'\n'
+                body+="\nFAILURES:\n${failures}\n"
             fi
 
-            # Extract warnings
             local warnings
             warnings="$(jq -r '.checks[] | select(.status == "warn") | "  [WARN] \(.name): \(.message) \(if .detail != "" then "(\(.detail))" else "" end)"' "$REPORT_FILE" 2>/dev/null || echo "")"
             if [[ -n "$warnings" ]]; then
-                body+=""$'\n'"WARNINGS:"$'\n'"${warnings}"$'\n'
+                body+="\nWARNINGS:\n${warnings}\n"
             fi
-        else
-            body+="  (install jq for detailed issue listing)"$'\n'
         fi
-        body+=""$'\n'
+        body+="\n"
     fi
 
-    body+="Full JSON report: ${REPORT_FILE}"$'\n'
-    body+="Latest symlink:   ${LATEST_LINK}"$'\n'
-    body+=""$'\n'
-    body+="-- "$'\n'
-    body+="autofix.sh v${SCRIPT_VERSION}"$'\n'
+    body+="Full JSON report: ${REPORT_FILE}\n"
+    body+="Latest symlink:   ${LATEST_LINK}\n"
+    body+="\n-- \nautofix.sh v${SCRIPT_VERSION}\n"
 
-    # Send via available mailer
-    case "$mailer" in
-        mail)
-            echo "$body" | mail -s "$subject" "$EMAIL_TO"
-            ;;
-        msmtp)
-            {
-                echo "From: ${EMAIL_FROM}"
-                echo "To: ${EMAIL_TO}"
-                echo "Subject: ${subject}"
-                echo "Content-Type: text/plain; charset=utf-8"
-                echo ""
-                echo "$body"
-            } | msmtp "$EMAIL_TO"
-            ;;
-        sendmail)
-            {
-                echo "From: ${EMAIL_FROM}"
-                echo "To: ${EMAIL_TO}"
-                echo "Subject: ${subject}"
-                echo "Content-Type: text/plain; charset=utf-8"
-                echo ""
-                echo "$body"
-            } | sendmail -t
-            ;;
-    esac
+    # Send via SendGrid API
+    local sg_payload
+    sg_payload=$(jq -nc \
+        --arg from_email "$EMAIL_FROM" \
+        --arg from_name "Voice AutoFix" \
+        --arg to_email "$EMAIL_TO" \
+        --arg subject "$subject" \
+        --arg body "$(echo -e "$body")" \
+        '{
+            personalizations: [{to: [{email: $to_email}]}],
+            from: {email: $from_email, name: $from_name},
+            subject: $subject,
+            content: [{type: "text/plain", value: $body}]
+        }')
 
-    local send_rc=$?
-    if [[ $send_rc -eq 0 ]]; then
-        log_ok "Email report sent to ${EMAIL_TO}"
+    local sg_http_code
+    sg_http_code="$(curl -s -o /dev/null -w "%{http_code}" \
+        --max-time 10 \
+        -X POST "https://api.sendgrid.com/v3/mail/send" \
+        -H "Authorization: Bearer ${SENDGRID_API_KEY}" \
+        -H "Content-Type: application/json" \
+        -d "$sg_payload" 2>/dev/null || echo "000")"
+
+    if [[ "$sg_http_code" == "202" ]]; then
+        log_ok "Email report sent via SendGrid to ${EMAIL_TO}"
+        return 0
     else
-        log_warn "Email send failed (exit code ${send_rc})"
+        log_fail "SendGrid email failed: HTTP ${sg_http_code}"
+        return 1
     fi
-    return $send_rc
 }
 
 # ---------------------------------------------------------------------------

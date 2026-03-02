@@ -41,6 +41,10 @@ export function cleanForTTS(text: string): string {
       .replace(/^>\s*/gm, '')
       // Remove horizontal rules
       .replace(/^[-*_]{3,}\s*$/gm, '')
+      // Replace brand name with phonetic spelling — Azure TTS cancels (reason=1) on "Step2Job"
+      // because it tries to expand the numeral 2 unpredictably. Phonetic version is safe.
+      .replace(/Step2Job-a/gi, 'Step Tu Džob-a')
+      .replace(/Step2Job/gi, 'Step Tu Džob')
       // Collapse multiple whitespace / newlines to a single space
       .replace(/\s+/g, ' ')
       .trim()
