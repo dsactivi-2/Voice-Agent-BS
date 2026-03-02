@@ -2,6 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { registerHealthRoute } from '../../src/health.js';
 
+vi.mock('../../src/config.js', () => ({
+  config: {
+    DEEPGRAM_BASE_URL: undefined,
+  },
+}));
+
 vi.mock('../../src/utils/logger.js', () => ({
   logger: {
     warn: vi.fn(),
