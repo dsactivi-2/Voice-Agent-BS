@@ -19,6 +19,7 @@ import type { MediaSession } from './telephony/provider.js';
 // Deepgram ASR
 import { DeepgramASRClient } from './deepgram/client.js';
 import type { DeepgramLanguage } from './deepgram/client.js';
+import type { DeepgramConnectionPool } from './deepgram/connection-pool.js';
 
 // Audio
 import { RingBuffer } from './audio/ring-buffer.js';
@@ -96,6 +97,8 @@ export interface CallOrchestratorParams {
   agentConfig: AgentConfig;
   campaignId: string;
   mediaSession: MediaSession;
+  /** Optional pre-warmed connection pool. When provided, acquire/release replaces connect/close. */
+  deepgramPool?: DeepgramConnectionPool;
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +122,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
   private readonly agentConfig: AgentConfig;
   private readonly campaignId: string;
   private readonly mediaSession: MediaSession;
+  private readonly deepgramPool: DeepgramConnectionPool | null;
 
   // ── Per-call components ──────────────────────────────────────────
   private session: CallSession | null = null;
@@ -154,6 +158,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     this.agentConfig = params.agentConfig;
     this.campaignId = params.campaignId;
     this.mediaSession = params.mediaSession;
+    this.deepgramPool = params.deepgramPool ?? null;
   }
 
   // ════════════════════════════════════════════════════════════════
@@ -229,13 +234,11 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       this.bindMediaSessionEvents();
       this.bindTurnTakingEvents();
 
-      // 7. Connect Deepgram ASR — fire-and-forget, don't block start() or greeting
-      this.asrClient = new DeepgramASRClient(
-        this.agentConfig.deepgramLanguage as DeepgramLanguage,
-        config.DEEPGRAM_API_KEY,
-      );
-      // Replay the ring buffer into Deepgram once it connects so audio buffered
-      // during the handshake is not lost.
+      // 7. Connect Deepgram ASR — fire-and-forget, don't block start() or greeting.
+      //    With a pre-warmed pool the acquire() call returns immediately (no handshake).
+      //    Without a pool a fresh connection is created (5s+ handshake, ring buffer covers gap).
+      const language = this.agentConfig.deepgramLanguage as DeepgramLanguage;
+
       const replayRingBuffer = () => {
         const available = this.ringBuffer?.available ?? 0;
         if (available > 0 && this.ringBuffer) {
@@ -250,49 +253,66 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         }
       };
 
-      // Non-blocking: greeting plays immediately while DG handshakes in background
-      this.asrClient.connect().then(replayRingBuffer).catch((error: unknown) => {
-        logger.error({ err: error, callId: this.callId }, 'Deepgram ASR failed to connect');
-      });
-      this.asrClient.on('reconnected', replayRingBuffer);
-      this.asrClient.on('transcript', (event) => {
-        // Minimum confidence threshold for accepting transcripts.
-        // Proven in live call f856f748: confidence 0.24 produced "Tlancomline" (garbage).
-        // Finals below this threshold are dropped entirely; interims are also dropped
-        // so they cannot be used as H1 fallback with garbage content.
-        const MIN_CONFIDENCE = 0.5;
+      const bindAsrListeners = (client: DeepgramASRClient) => {
+        client.on('reconnected', replayRingBuffer);
+        client.on('transcript', (event) => {
+          // Minimum confidence threshold for accepting transcripts.
+          // Proven in live call f856f748: confidence 0.24 produced "Tlancomline" (garbage).
+          // Finals below this threshold are dropped entirely; interims are also dropped
+          // so they cannot be used as H1 fallback with garbage content.
+          const MIN_CONFIDENCE = 0.5;
 
-        if (event.isFinal) {
-          if (event.confidence < MIN_CONFIDENCE) {
-            logger.warn(
-              { callId: this.callId, text: event.text, confidence: event.confidence, threshold: MIN_CONFIDENCE },
-              'ASR FINAL transcript dropped — confidence below threshold',
-            );
-            return;
-          }
-          logger.info(
-            { callId: this.callId, text: event.text, confidence: event.confidence },
-            'ASR FINAL transcript',
-          );
-        } else {
-          if (event.confidence < MIN_CONFIDENCE && event.confidence > 0) {
-            // confidence=0 on interims is normal (Deepgram omits it) — only warn when explicitly low
-            logger.warn(
+          if (event.isFinal) {
+            if (event.confidence < MIN_CONFIDENCE) {
+              logger.warn(
+                { callId: this.callId, text: event.text, confidence: event.confidence, threshold: MIN_CONFIDENCE },
+                'ASR FINAL transcript dropped — confidence below threshold',
+              );
+              return;
+            }
+            logger.info(
               { callId: this.callId, text: event.text, confidence: event.confidence },
-              'ASR interim transcript dropped — confidence below threshold',
+              'ASR FINAL transcript',
             );
-            return;
+          } else {
+            if (event.confidence < MIN_CONFIDENCE && event.confidence > 0) {
+              // confidence=0 on interims is normal (Deepgram omits it) — only warn when explicitly low
+              logger.warn(
+                { callId: this.callId, text: event.text, confidence: event.confidence },
+                'ASR interim transcript dropped — confidence below threshold',
+              );
+              return;
+            }
+            logger.debug(
+              { callId: this.callId, text: event.text },
+              'ASR interim transcript',
+            );
           }
-          logger.debug(
-            { callId: this.callId, text: event.text },
-            'ASR interim transcript',
-          );
-        }
-        this.turnTakingManager?.onTranscriptReceived(event.isFinal, event.text);
-      });
-      this.asrClient.on('error', (error) => {
-        logger.error({ err: error, callId: this.callId }, 'Deepgram ASR error');
-      });
+          this.turnTakingManager?.onTranscriptReceived(event.isFinal, event.text);
+        });
+        client.on('error', (error) => {
+          logger.error({ err: error, callId: this.callId }, 'Deepgram ASR error');
+        });
+      };
+
+      // Acquire from pool (no handshake) or create a fresh connection (5s+ handshake).
+      // Either way: fire-and-forget so start() doesn't block — ring buffer covers the gap.
+      if (this.deepgramPool) {
+        this.deepgramPool.acquire(language).then((client) => {
+          this.asrClient = client;
+          bindAsrListeners(client);
+          replayRingBuffer();
+        }).catch((error: unknown) => {
+          logger.error({ err: error, callId: this.callId }, 'Deepgram pool acquire failed');
+        });
+      } else {
+        const client = new DeepgramASRClient(language, config.DEEPGRAM_API_KEY);
+        this.asrClient = client;
+        bindAsrListeners(client);
+        client.connect().then(replayRingBuffer).catch((error: unknown) => {
+          logger.error({ err: error, callId: this.callId }, 'Deepgram ASR failed to connect');
+        });
+      }
 
       // 9. Persist call record to DB
       await this.safeDbOperation('createCall', () =>
@@ -1187,9 +1207,13 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     // Unbind media session events
     this.unbindMediaSessionEvents();
 
-    // Close Deepgram ASR connection
+    // Close Deepgram ASR connection (or release back to pool)
     if (this.asrClient) {
-      void this.asrClient.close();
+      if (this.deepgramPool) {
+        this.deepgramPool.release(this.asrClient);
+      } else {
+        void this.asrClient.close();
+      }
       this.asrClient = null;
     }
 

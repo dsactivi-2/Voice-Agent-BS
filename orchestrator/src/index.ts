@@ -23,9 +23,20 @@ async function main(): Promise<void> {
     logger.warn({ err }, 'TTS cache warm-up failed — calls will cold-synthesize');
   });
 
+  // Pre-warm Deepgram connection pool — eliminates 5s handshake on first call
+  const { DeepgramConnectionPool } = await import('./deepgram/connection-pool.js');
+  const deepgramPool = new DeepgramConnectionPool(5, config.DEEPGRAM_API_KEY, 20);
+  // 2 BS + 1 SR connections ready before the first call arrives
+  Promise.all([
+    deepgramPool.warmUp('bs', 2),
+    deepgramPool.warmUp('sr', 1),
+  ]).catch((err: unknown) => {
+    logger.warn({ err }, 'Deepgram pool warm-up failed — pool will create connections on demand');
+  });
+
   // Start server
   const { startServer } = await import('./server.js');
-  await startServer({ dbPool: pool, redis });
+  await startServer({ dbPool: pool, redis, deepgramPool });
 }
 
 main().catch((error: unknown) => {
