@@ -781,9 +781,9 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
     logger.info({ callId: this.callId }, 'Barge-in detected — cancelling TTS playback');
 
-    // Abort any in-flight LLM stream so the generator loop exits
-    this.currentLLMAbortController?.abort();
-    this.currentLLMAbortController = null;
+    // DO NOT abort the LLM stream — let it complete so we get valid JSON
+    // for session context/memory. The streaming loop checks activeTurnId
+    // and skips TTS feeding when superseded by barge-in.
 
     // Increment turn ID BEFORE resetting the processing guard.
     // This ensures any in-flight handleUserFinishedSpeaking finally-block
@@ -945,6 +945,9 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     const messages = this.memoryManager.buildLLMContext(this.agentConfig.systemPrompt);
     messages.push({ role: 'user', content: transcript });
 
+    // Capture turn ID — if barge-in fires, activeTurnId increments and we stop feeding TTS.
+    const myProcessTurnId = this.activeTurnId;
+
     const model = this.session.llmMode === 'full'
       ? config.LLM_FULL_MODEL
       : config.LLM_MINI_MODEL;
@@ -1023,19 +1026,19 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
               jsonTTSState = 'in_value';
               const captured = match[1] ?? '';
               jsonTTSBuffer = '';
-              if (captured) this.currentTTSPipeline.addTokens(captured);
+              if (captured && this.activeTurnId === myProcessTurnId) this.currentTTSPipeline?.addTokens(captured);
             }
           } else {
             if (jsonTTSEscaped) {
               const unescaped = ch === 'n' ? '\n' : ch === 't' ? '\t' : ch;
-              this.currentTTSPipeline.addTokens(unescaped);
+              if (this.activeTurnId === myProcessTurnId) this.currentTTSPipeline?.addTokens(unescaped);
               jsonTTSEscaped = false;
             } else if (ch === '\\') {
               jsonTTSEscaped = true;
             } else if (ch === '"') {
               jsonTTSState = 'done';
             } else {
-              this.currentTTSPipeline.addTokens(ch);
+              if (this.activeTurnId === myProcessTurnId) this.currentTTSPipeline?.addTokens(ch);
             }
           }
         }
@@ -1046,7 +1049,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       // The generator returns the parsed LLMResponse when done
       llmResponse = result.value;
       // 6. Flush remaining TTS buffer (pipeline may be null if barge-in fired)
-      await this.currentTTSPipeline?.flush();
+      if (this.activeTurnId === myProcessTurnId) await this.currentTTSPipeline?.flush();
 
 
     } catch (error) {
@@ -1075,18 +1078,15 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
 
     } finally {
-      // Clear the LLM abort controller for this turn
-      this.currentLLMAbortController = null;
-
-      // Clean up TTS pipeline for this turn (may already be null if barge-in destroyed it)
-      this.currentTTSPipeline?.destroy();
-      this.currentTTSPipeline = null;
-
-
-
-      // Mark bot as no longer speaking
-      this.isBotSpeaking = false;
-      this.turnTakingManager?.setBotSpeaking(false);
+      // Only clean up shared state if this is still the active turn.
+      // If barge-in fired, the new turn owns these resources.
+      if (this.activeTurnId === myProcessTurnId) {
+        this.currentLLMAbortController = null;
+        this.currentTTSPipeline?.destroy();
+        this.currentTTSPipeline = null;
+        this.isBotSpeaking = false;
+        this.turnTakingManager?.setBotSpeaking(false);
+      }
     }
 
     // 7. Process the LLM response (update session state)
