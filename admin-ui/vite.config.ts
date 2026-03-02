@@ -4,6 +4,17 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   base: '/app',
+  resolve: {
+    // Redirect @mui/icons-material CJS sub-paths to their ESM equivalents.
+    // Without this, esbuild pre-bundles the CJS files with isNodeMode=1,
+    // which causes "type is invalid – got: object" for icon components.
+    alias: [
+      {
+        find: /^@mui\/icons-material\/(?!esm\/)(.+)$/,
+        replacement: '@mui/icons-material/esm/$1',
+      },
+    ],
+  },
   build: {
     target: 'es2020',
     sourcemap: false,

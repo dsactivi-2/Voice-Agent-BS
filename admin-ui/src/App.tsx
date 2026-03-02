@@ -49,7 +49,6 @@ export function App() {
       theme={lightTheme}
       darkTheme={darkTheme}
       defaultTheme="dark"
-      basename="/app"
     >
       <Resource
         name="agents"
