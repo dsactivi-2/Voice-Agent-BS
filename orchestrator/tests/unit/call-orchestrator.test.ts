@@ -581,26 +581,26 @@ describe('CallOrchestrator', () => {
       expect(ttm.onTranscriptReceived).not.toHaveBeenCalled();
     });
 
-    it('drops final transcript at exactly the threshold boundary (confidence = 0.499)', async () => {
+    it('drops final transcript at exactly the threshold boundary (confidence = 0.299)', async () => {
       const { orchestrator } = createOrchestrator();
       await orchestrator.start();
 
       const ttm = getTurnTakingManager(orchestrator);
       const asr = getAsrClient(orchestrator);
 
-      asr.emit('transcript', { text: 'Hmm', isFinal: true, confidence: 0.499, speechFinal: false });
+      asr.emit('transcript', { text: 'Hmm', isFinal: true, confidence: 0.299, speechFinal: false });
 
       expect(ttm.onTranscriptReceived).not.toHaveBeenCalled();
     });
 
-    it('accepts final transcript at exactly 0.5 confidence', async () => {
+    it('accepts final transcript at exactly 0.3 confidence (threshold boundary)', async () => {
       const { orchestrator } = createOrchestrator();
       await orchestrator.start();
 
       const ttm = getTurnTakingManager(orchestrator);
       const asr = getAsrClient(orchestrator);
 
-      asr.emit('transcript', { text: 'Da zanima me', isFinal: true, confidence: 0.5, speechFinal: true });
+      asr.emit('transcript', { text: 'Da zanima me', isFinal: true, confidence: 0.3, speechFinal: true });
 
       expect(ttm.onTranscriptReceived).toHaveBeenCalledWith(true, 'Da zanima me');
     });
@@ -612,7 +612,7 @@ describe('CallOrchestrator', () => {
       const ttm = getTurnTakingManager(orchestrator);
       const asr = getAsrClient(orchestrator);
 
-      asr.emit('transcript', { text: 'Tlancomline', isFinal: false, confidence: 0.3, speechFinal: false });
+      asr.emit('transcript', { text: 'Tlancomline', isFinal: false, confidence: 0.29, speechFinal: false });
 
       expect(ttm.onTranscriptReceived).not.toHaveBeenCalled();
     });
