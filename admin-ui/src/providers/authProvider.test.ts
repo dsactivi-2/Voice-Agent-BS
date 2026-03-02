@@ -56,7 +56,7 @@ describe('authProvider.logout', () => {
     localStorage.setItem('refreshToken', 'ref');
     localStorage.setItem('user', '{"id":"1"}');
 
-    await authProvider.logout();
+    await authProvider.logout({});
 
     expect(localStorage.getItem('accessToken')).toBeNull();
     expect(localStorage.getItem('refreshToken')).toBeNull();
