@@ -189,8 +189,10 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       this.memoryManager = new MemoryManager();
 
       // 2a. Load cross-call memory for returning callers (non-blocking — DB failure
-      //     is logged and swallowed so the call still proceeds for first-time callers)
-      if (config.MEMORY_CROSS_CALL_ENABLED) {
+      //     is logged and swallowed so the call still proceeds for first-time callers).
+      //     Skip for 'unknown' phone numbers — these can't be reliably identified as
+      //     returning callers and would cause unrelated calls to share the same memory.
+      if (config.MEMORY_CROSS_CALL_ENABLED && this.phoneNumber !== 'unknown') {
         try {
           const priorMemory = await getCallMemory(this.phoneNumber, this.campaignId);
           if (priorMemory) {
@@ -391,7 +393,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       );
 
       // 2. Save cross-call memory
-      if (this.session && this.memoryManager && config.MEMORY_CROSS_CALL_ENABLED) {
+      if (this.session && this.memoryManager && config.MEMORY_CROSS_CALL_ENABLED && this.phoneNumber !== 'unknown') {
         const avgInterest = this.session.interestScores.length > 0
           ? this.session.interestScores.reduce((a, b) => a + b, 0) / this.session.interestScores.length
           : 0;
@@ -1023,8 +1025,8 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
       // The generator returns the parsed LLMResponse when done
       llmResponse = result.value;
-      // 6. Flush remaining TTS buffer
-      await this.currentTTSPipeline.flush();
+      // 6. Flush remaining TTS buffer (pipeline may be null if barge-in fired)
+      await this.currentTTSPipeline?.flush();
 
 
     } catch (error) {
@@ -1044,9 +1046,9 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         'LLM_TURN_FALLBACK',
       );
 
-      // Try to flush whatever we have
+      // Try to flush whatever we have (pipeline may already be null if barge-in destroyed it)
       try {
-        await this.currentTTSPipeline.flush();
+        await this.currentTTSPipeline?.flush();
       } catch (flushErr) {
         logger.error({ err: flushErr, callId: this.callId }, 'TTS flush after LLM error also failed');
       }
@@ -1056,8 +1058,8 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       // Clear the LLM abort controller for this turn
       this.currentLLMAbortController = null;
 
-      // Clean up TTS pipeline for this turn
-      this.currentTTSPipeline.destroy();
+      // Clean up TTS pipeline for this turn (may already be null if barge-in destroyed it)
+      this.currentTTSPipeline?.destroy();
       this.currentTTSPipeline = null;
 
 
@@ -1083,11 +1085,15 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
     // 9. Log bot turn to memory manager and DB
     if (fullResponseText.length > 0) {
+      // Store only reply_text (not the full raw JSON) for readability in memory and DB.
+      // fullResponseText is the raw LLM JSON stream; llmResponse.reply_text is already parsed.
+      const botText = llmResponse?.reply_text ?? fullResponseText;
+
       const botTurn: Turn = {
         callId: this.callId,
         turnNumber: this.turnCounter,
         speaker: 'bot',
-        text: fullResponseText,
+        text: botText,
         interestScore: llmResponse?.interest_score,
         complexityScore: llmResponse?.complexity_score,
         llmMode: this.session.llmMode,
@@ -1102,7 +1108,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
           callId: this.callId,
           turnNumber: this.turnCounter,
           speaker: 'bot',
-          text: fullResponseText,
+          text: botText,
           interestScore: llmResponse?.interest_score,
           complexityScore: llmResponse?.complexity_score,
           llmMode: this.session?.llmMode ?? 'mini',
