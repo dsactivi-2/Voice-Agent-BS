@@ -213,7 +213,8 @@ export async function createServer(deps: ServerDependencies) {
     { name: 'postgres', fn: async () => { await deps.dbPool.end(); } },
   ];
   if (deps.deepgramPool) {
-    closeFns.push({ name: 'deepgramPool', fn: async () => { await deps.deepgramPool!.closeAll(); } });
+    const pool = deps.deepgramPool;
+    closeFns.push({ name: 'deepgramPool', fn: async () => { await pool.closeAll(); } });
   }
   setupGracefulShutdown({
     server: app,

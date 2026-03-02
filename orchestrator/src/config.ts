@@ -23,7 +23,7 @@ const envSchema = z.object({
 
   // Deepgram
   DEEPGRAM_API_KEY: z.string().min(1),
-  DEEPGRAM_BASE_URL: z.string().url().optional(),
+  DEEPGRAM_BASE_URL: z.string().check(z.url()).optional(),
 
   // OpenAI
   OPENAI_API_KEY: z.string().min(1),

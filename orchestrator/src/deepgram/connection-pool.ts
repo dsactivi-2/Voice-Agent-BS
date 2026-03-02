@@ -78,8 +78,8 @@ export class DeepgramConnectionPool {
     const entryIndex = this.available.findIndex((entry) => entry.language === language);
 
     if (entryIndex !== -1) {
-      const entry = this.available[entryIndex]!;
-      this.available.splice(entryIndex, 1);
+      const entry = this.available.splice(entryIndex, 1)[0];
+      if (!entry) throw new Error('DeepgramPool: internal error — entry missing at index');
 
       // Verify the connection is still alive
       if (entry.client.isConnected()) {
