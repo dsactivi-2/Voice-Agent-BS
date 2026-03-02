@@ -11,6 +11,16 @@ const DEFAULT_VOICES: Record<Language, string> = {
 };
 
 /**
+ * Prosody settings per language — tuned from production TTS latency tests
+ * (BS_energetic / SR_energetic presets: faster delivery, more natural energy
+ * for a sales context while staying within Azure's supported range).
+ */
+const PROSODY: Record<Language, { rate: string; pitch: string }> = {
+  'bs-BA': { rate: '+5%', pitch: '+10%' },
+  'sr-RS': { rate: '+5%', pitch: '+10%' },
+};
+
+/**
  * Builds SSML markup for Azure TTS (no prosody, no style — natural voice default).
  *
  * @param text     - The plain text to synthesize
@@ -42,10 +52,14 @@ export function buildSSML(text: string, language: Language, voice: string): stri
     '<say-as interpret-as="cardinal">$1</say-as>',
   );
 
+  const { rate, pitch } = PROSODY[language];
+
   return [
     `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${language}">`,
     `  <voice name="${voice}">`,
-    `    ${withNumbers}`,
+    `    <prosody rate="${rate}" pitch="${pitch}">`,
+    `      ${withNumbers}`,
+    `    </prosody>`,
     `  </voice>`,
     `</speak>`,
   ].join('\n');

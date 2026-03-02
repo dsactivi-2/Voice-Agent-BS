@@ -82,12 +82,20 @@ describe('buildSSML', () => {
     expect(ssml).toContain('</speak>');
   });
 
-  it('does not include prosody or rate/pitch overrides (natural voice default)', () => {
+  it('applies energetic prosody (rate=+5% pitch=+10%) for bs-BA', () => {
+    const ssml = buildSSML('Test tekst', 'bs-BA', 'bs-BA-GoranNeural');
+
+    expect(ssml).toContain('<prosody');
+    expect(ssml).toContain('rate="+5%"');
+    expect(ssml).toContain('pitch="+10%"');
+  });
+
+  it('applies energetic prosody (rate=+5% pitch=+10%) for sr-RS', () => {
     const ssml = buildSSML('Test tekst', 'sr-RS', 'sr-RS-NicholasNeural');
 
-    expect(ssml).not.toContain('<prosody');
-    expect(ssml).not.toContain('rate=');
-    expect(ssml).not.toContain('pitch=');
+    expect(ssml).toContain('<prosody');
+    expect(ssml).toContain('rate="+5%"');
+    expect(ssml).toContain('pitch="+10%"');
   });
 
   it('does not include mstts express-as style (natural voice default)', () => {
