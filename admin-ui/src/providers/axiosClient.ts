@@ -1,6 +1,9 @@
 import axios from 'axios';
 
-export const BASE_URL = 'https://voice.activi.io/api/manage';
+// In dev, VITE_API_URL can be set to a Vite proxy path (e.g. '/api/manage')
+// to avoid CORS issues when testing against production.
+export const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)
+  ?? 'https://voice.activi.io/api/manage';
 
 export const axiosClient = axios.create({ baseURL: BASE_URL });
 
@@ -56,7 +59,7 @@ axiosClient.interceptors.response.use(
     } catch {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
-      window.location.href = '/app/login';
+      window.location.href = '/app/#/login';
       throw error;
     } finally {
       isRefreshing = false;

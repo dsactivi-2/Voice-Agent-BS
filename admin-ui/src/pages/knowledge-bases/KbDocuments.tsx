@@ -55,7 +55,7 @@ export function KbDocuments() {
     }
   };
 
-  useEffect(() => { void load(); }, [kbId]); // eslint-disable-line
+  useEffect(() => { void load(); }, [kbId]); // load is intentionally excluded
 
   const handleAddDoc = async () => {
     if (!kbId) return;

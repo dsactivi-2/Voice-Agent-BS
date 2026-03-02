@@ -20,3 +20,4 @@ tmp/
 .windsurf/
 skills/
 skills-lock.json
+*.local

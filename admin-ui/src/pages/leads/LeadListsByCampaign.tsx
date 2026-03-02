@@ -37,7 +37,7 @@ export function LeadListsByCampaign() {
     }
   };
 
-  useEffect(() => { void load(); }, [campaignId]); // eslint-disable-line
+  useEffect(() => { void load(); }, [campaignId]); // load is intentionally excluded
 
   const handleDelete = async (listId: string) => {
     if (!campaignId) return;

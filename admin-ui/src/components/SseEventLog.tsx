@@ -54,8 +54,7 @@ export function SseEventLog({ callId, maxEvents = 100 }: SseEventLogProps) {
         }
       },
       onmessage: (event) => {
-        // Heartbeat ignorieren: ": ping"
-        if (!event.data || event.data.startsWith(':')) return;
+        if (!event.data) return;
         try {
           const parsed = JSON.parse(event.data) as SseEvent;
           setEvents((prev) => [parsed, ...prev].slice(0, maxEvents));

@@ -15,6 +15,16 @@ export default defineConfig({
       },
     ],
   },
+  server: {
+    proxy: {
+      // Proxy /api/manage → production, so dev builds bypass CORS restrictions.
+      // Used together with VITE_API_URL=/api/manage in .env.development.local
+      '/api/manage': {
+        target: 'https://voice.activi.io',
+        changeOrigin: true,
+      },
+    },
+  },
   build: {
     target: 'es2020',
     sourcemap: false,

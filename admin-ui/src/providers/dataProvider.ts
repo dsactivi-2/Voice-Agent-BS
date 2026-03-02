@@ -63,8 +63,7 @@ function normalizeId<T extends Record<string, unknown>>(item: T): T & { id: stri
   return { ...item, id };
 }
 
-// Cast avoids TS generic covariance errors with react-admin's DataProvider type
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// `as unknown as DataProvider` cast avoids TS generic covariance errors with react-admin's DataProvider type
 export const dataProvider = {
   getList: async (resource: string, params: GetListParams) => {
     const { page = 1, perPage = 25 } = params.pagination ?? {};

@@ -24,7 +24,7 @@ function VersionHistory() {
     getPromptVersions(record.name)
       .then(({ data }) => setVersions(data.versions as Prompt[]))
       .catch(() => {/* non-critical */});
-  }, [record?.name]); // eslint-disable-line
+  }, [record?.name]); // record object excluded — only name change triggers reload
 
   if (versions.length === 0) return null;
 

@@ -49,7 +49,7 @@ export function DispositionList() {
     }
   };
 
-  useEffect(() => { void load(); }, [campaignId]); // eslint-disable-line
+  useEffect(() => { void load(); }, [campaignId]); // load is intentionally excluded
 
   const handleDelete = async (dispId: string) => {
     if (!campaignId) return;
