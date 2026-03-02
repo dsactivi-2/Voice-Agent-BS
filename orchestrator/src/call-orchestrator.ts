@@ -1084,18 +1084,17 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     );
 
     // 9. Log bot turn to memory manager and DB
-    if (fullResponseText.length > 0) {
-      // Store only reply_text (not the full raw JSON) for readability in memory and DB.
-      // fullResponseText is the raw LLM JSON stream; llmResponse.reply_text is already parsed.
-      const botText = llmResponse?.reply_text ?? fullResponseText;
-
+    // Only store when LLM completed fully (reply_text parsed).
+    // Aborted/barge-in turns have llmResponse=null — skip to avoid storing partial JSON.
+    if (llmResponse) {
+      const botText = llmResponse.reply_text;
       const botTurn: Turn = {
         callId: this.callId,
         turnNumber: this.turnCounter,
         speaker: 'bot',
         text: botText,
-        interestScore: llmResponse?.interest_score,
-        complexityScore: llmResponse?.complexity_score,
+        interestScore: llmResponse.interest_score,
+        complexityScore: llmResponse.complexity_score,
         llmMode: this.session.llmMode,
         latencyMs: llmLatencyMs,
         timestamp: new Date(),
@@ -1109,8 +1108,8 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
           turnNumber: this.turnCounter,
           speaker: 'bot',
           text: botText,
-          interestScore: llmResponse?.interest_score,
-          complexityScore: llmResponse?.complexity_score,
+          interestScore: llmResponse.interest_score,
+          complexityScore: llmResponse.complexity_score,
           llmMode: this.session?.llmMode ?? 'mini',
           latencyMs: llmLatencyMs,
         }),
