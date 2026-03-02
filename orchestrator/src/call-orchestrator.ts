@@ -260,7 +260,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
           // Proven in live call f856f748: confidence 0.24 produced "Tlancomline" (garbage).
           // Finals below this threshold are dropped entirely; interims are also dropped
           // so they cannot be used as H1 fallback with garbage content.
-          const MIN_CONFIDENCE = 0.5;
+          const MIN_CONFIDENCE = 0.3;
 
           if (event.isFinal) {
             if (event.confidence < MIN_CONFIDENCE) {
