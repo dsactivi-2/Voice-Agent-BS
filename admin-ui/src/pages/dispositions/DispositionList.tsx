@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -34,7 +34,7 @@ export function DispositionList() {
   const [error, setError] = useState<string | null>(null);
   const [editDisposition, setEditDisposition] = useState<Disposition | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!campaignId) return;
     setLoading(true);
     try {
@@ -47,9 +47,9 @@ export function DispositionList() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [campaignId]);
 
-  useEffect(() => { void load(); }, [campaignId]); // load is intentionally excluded
+  useEffect(() => { void load(); }, [load]);
 
   const handleDelete = async (dispId: string) => {
     if (!campaignId) return;

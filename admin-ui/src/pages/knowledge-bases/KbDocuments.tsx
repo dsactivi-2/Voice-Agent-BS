@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box, Typography, Button, Table, TableHead, TableBody, TableRow, TableCell,
@@ -42,7 +42,7 @@ export function KbDocuments() {
   const [searchResults, setSearchResults] = useState<Array<{ content: string; score: number }>>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!kbId) return;
     setLoading(true);
     try {
@@ -53,9 +53,9 @@ export function KbDocuments() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [kbId]);
 
-  useEffect(() => { void load(); }, [kbId]); // load is intentionally excluded
+  useEffect(() => { void load(); }, [load]);
 
   const handleAddDoc = async () => {
     if (!kbId) return;
