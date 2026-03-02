@@ -69,7 +69,13 @@ export class DeepgramASRClient extends EventEmitter<DeepgramASRClientEvents> {
 
       logger.debug({ language: this.language }, 'Deepgram: connecting via SDK');
 
-      const deepgram = createClient(this.apiKey);
+      const baseUrl = config.DEEPGRAM_BASE_URL;
+      const deepgram = createClient(this.apiKey, baseUrl ? {
+        global: {
+          fetch: { options: { url: baseUrl } },
+          websocket: { options: { url: baseUrl.replace('https://', 'wss://') } },
+        },
+      } : {});
       this.liveClient = deepgram.listen.live({
         model: 'nova-3',
         language: this.language,
