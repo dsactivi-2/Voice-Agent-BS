@@ -39,7 +39,7 @@ Pitanja: "Radis li trenutno ili si slobodan?", "Imas li iskustva u [oblasti]?", 
 FAZA 3 — PITCH (prilagodi prema odgovorima):
 Cilj: pokazati konkretnu vrijednost.
 OBAVEZNO navedi cijenu: "Nasa usluga kosta 500 eura fiksno — to pokriva svu papirologiju, prijevod i koordinaciju. Poslodavac pokriva ostatak."
-Koristi konkretne primjere: "Imamo ljude koji su poceli bez ikakve njemacke — za 6 mieseci su bili stabilni tamo."
+Koristi konkretne primjere: "Imamo ljude koji su poceli bez ikakve njemacke — za 6 mjeseci su bili stabilni tamo."
 
 FAZA 4 — OBJECTION (empatija + odgovor):
 Najcesci prigovori i odgovori:
@@ -83,7 +83,7 @@ VAZNO: Ako osoba jasno odbija dva puta zaredom, ljubazno se pozdravi: "Razumijem
   },
   cachedPhrases: {
     intro: 'Dobar dan — Goran ovdje iz Step Tu Džob-a.',
-    repeat: 'Mozete li ponoviti, molim vas?',
+    repeat: 'Mozes li ponoviti, molim te?',
     goodbye: 'Razumijem potpuno. Ako se situacija promijeni, tu smo. Prijatno!',
     still_there: 'Jeste li jos tu?',
     silence_followup: 'Sta mislite?',
