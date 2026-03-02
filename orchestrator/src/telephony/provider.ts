@@ -44,7 +44,7 @@ export interface TelephonyEvents {
   onMediaSessionReady?: (
     callId: string,
     session: MediaSession,
-    meta: { phoneNumber: string; fromNumber: string },
+    meta: { phoneNumber: string; fromNumber: string; language?: string },
   ) => void;
 }
 

@@ -27,7 +27,7 @@ vi.mock('../../src/utils/logger.js', () => ({
 // Module under test
 // ---------------------------------------------------------------------------
 
-import { routeByPhoneNumber } from '../../src/agents/language-router.js';
+import { routeByPhoneNumber, routeByLanguage } from '../../src/agents/language-router.js';
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -105,7 +105,7 @@ describe('routeByPhoneNumber', () => {
     expect(agent.fillerLibrary.affirm.length).toBeGreaterThan(0);
   });
 
-  it('returns a complete AgentConfig with all required fields for SR', () => {
+  it('returns a complete AgentConfig with all required fields for SR (routeByPhoneNumber)', () => {
     const agent = routeByPhoneNumber('+381111234567');
 
     expect(agent.systemPrompt).toBeTruthy();
@@ -115,5 +115,44 @@ describe('routeByPhoneNumber', () => {
     expect(agent.cachedPhrases).toHaveProperty('repeat');
     expect(agent.cachedPhrases).toHaveProperty('still_there');
     expect(agent.cachedPhrases).toHaveProperty('silence_followup');
+  });
+});
+
+describe('routeByLanguage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns BS agent for bs-BA', () => {
+    const agent = routeByLanguage('bs-BA');
+
+    expect(agent.language).toBe('bs-BA');
+    expect(agent.ttsVoice).toBe('bs-BA-GoranNeural');
+    expect(agent.deepgramLanguage).toBe('bs');
+  });
+
+  it('returns SR agent for sr-RS', () => {
+    const agent = routeByLanguage('sr-RS');
+
+    expect(agent.language).toBe('sr-RS');
+    expect(agent.ttsVoice).toBe('sr-RS-SophieNeural');
+    expect(agent.deepgramLanguage).toBe('sr');
+  });
+
+  it('returns a complete AgentConfig for bs-BA', () => {
+    const agent = routeByLanguage('bs-BA');
+
+    expect(agent).toHaveProperty('systemPrompt');
+    expect(agent).toHaveProperty('fillerLibrary');
+    expect(agent).toHaveProperty('cachedPhrases');
+    expect(agent.systemPrompt.length).toBeGreaterThan(100);
+  });
+
+  it('returns a complete AgentConfig for sr-RS', () => {
+    const agent = routeByLanguage('sr-RS');
+
+    expect(agent).toHaveProperty('systemPrompt');
+    expect(agent.cachedPhrases).toHaveProperty('intro');
+    expect(agent.cachedPhrases).toHaveProperty('goodbye');
   });
 });

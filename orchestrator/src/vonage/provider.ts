@@ -18,6 +18,7 @@ import type {
   TelephonyEvents,
   OutboundCallParams,
 } from '../telephony/provider.js';
+import type { Language } from '../types.js';
 
 // ---------------------------------------------------------------------------
 // VonageProvider
@@ -38,8 +39,15 @@ export class VonageProvider implements TelephonyProvider {
   /** Map of active call sessions by Vonage UUID. */
   private readonly activeSessions = new Map<string, VonageMediaSession>();
 
-  /** Phone number metadata for calls awaiting their media WebSocket. */
+  /** Phone number metadata for inbound calls awaiting their media WebSocket. */
   private readonly pendingCallMeta = new Map<string, { phoneNumber: string; fromNumber: string }>();
+
+  /**
+   * Language + phone number metadata for outbound calls awaiting their media WebSocket.
+   * Populated in initiateCall(), consumed when the media WebSocket connects,
+   * cleaned up in handleCallCompleted().
+   */
+  private readonly pendingOutboundMeta = new Map<string, { phoneNumber: string; language: Language }>();
 
   /** Event callbacks for the orchestrator. */
   private readonly events: TelephonyEvents;
@@ -94,13 +102,17 @@ export class VonageProvider implements TelephonyProvider {
 
   async initiateCall(params: OutboundCallParams): Promise<string> {
     const { phoneNumber, campaignId } = params;
-    const language = (params.language ?? 'bs-BA') as 'bs-BA' | 'sr-RS';
+    const language = (params.language ?? 'bs-BA') as Language;
 
     const result = await initiateOutboundCall(
       phoneNumber,
       language,
       campaignId ?? 'default',
     );
+
+    // Store the outbound language and phoneNumber so the correct agent is used
+    // when the media WebSocket connects (Vonage calls back asynchronously).
+    this.pendingOutboundMeta.set(result.uuid, { phoneNumber, language });
 
     return result.uuid;
   }
@@ -206,6 +218,7 @@ export class VonageProvider implements TelephonyProvider {
     }
 
     this.pendingCallMeta.delete(uuid);
+    this.pendingOutboundMeta.delete(uuid);
 
     // NOTE: decrementActiveCalls() is NOT called here — the session 'stop' event
     // fires when the WebSocket closes and decrements the counter there.
@@ -238,8 +251,14 @@ export class VonageProvider implements TelephonyProvider {
       logger.info({ callId, timeToMediaReadyMs: Date.now() - wsConnectedAt }, 'Vonage media session started — firing onMediaSessionReady');
       this.activeSessions.set(callId, session);
 
-      // Fire onMediaSessionReady so server.ts can create the CallOrchestrator
-      const meta = this.pendingCallMeta.get(callId) ?? { phoneNumber: 'unknown', fromNumber: 'unknown' };
+      // Prefer outbound meta (has explicit language + phoneNumber from API request).
+      // Fall back to inbound meta (populated by handleCallStarted for inbound calls).
+      const outboundMeta = this.pendingOutboundMeta.get(callId);
+      const inboundMeta = this.pendingCallMeta.get(callId);
+      const meta = outboundMeta
+        ? { phoneNumber: outboundMeta.phoneNumber, fromNumber: 'unknown', language: outboundMeta.language }
+        : { ...inboundMeta ?? { phoneNumber: 'unknown', fromNumber: 'unknown' } };
+
       if (this.events.onMediaSessionReady) {
         this.events.onMediaSessionReady(
           callId,
