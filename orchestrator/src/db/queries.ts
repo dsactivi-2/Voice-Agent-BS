@@ -216,7 +216,7 @@ export async function insertTurn(params: InsertTurnParams): Promise<void> {
       (call_id, turn_number, speaker, text, interest_score, complexity_score, llm_mode, latency_ms)
     VALUES
       ($1, $2, $3, $4, $5, $6, $7, $8)
-    ON CONFLICT (call_id, turn_number) DO NOTHING
+    ON CONFLICT (call_id, turn_number, speaker) DO NOTHING
   `;
 
   try {

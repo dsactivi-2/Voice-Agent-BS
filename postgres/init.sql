@@ -46,7 +46,7 @@ CREATE TABLE turns (
     llm_mode         TEXT        CHECK (llm_mode IN ('mini', 'full')),
     latency_ms       INTEGER,
     timestamp        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT unique_turn UNIQUE (call_id, turn_number)
+    CONSTRAINT unique_turn UNIQUE (call_id, turn_number, speaker)
 );
 
 CREATE INDEX idx_turns_call_id   ON turns (call_id);
