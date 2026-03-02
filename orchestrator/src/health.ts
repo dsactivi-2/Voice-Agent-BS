@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
 import type { Redis } from 'ioredis';
 import type { HealthCheckResult, HealthStatus } from './types.js';
+import { config } from './config.js';
 import { logger } from './utils/logger.js';
 
 interface HealthDependencies {
@@ -55,12 +56,14 @@ export function registerHealthRoute(
     const [deepgram, azureTts, openai] = await Promise.all([
       checkService('deepgram', async () => {
         // Use GET — HEAD returns 405 on Deepgram's API
-        const res = await fetch('https://api.deepgram.com/v1/projects', {
+        const deepgramBase = config.DEEPGRAM_BASE_URL ?? 'https://api.deepgram.com';
+        const res = await fetch(`${deepgramBase}/v1/projects`, {
           method: 'GET',
           signal: AbortSignal.timeout(3000),
         }).catch(() => ({ ok: false }));
         // 401 means reachable but unauthorized — fine for health check
-        if (!res.ok && 'status' in res && (res).status !== 401) {
+        // 404 is returned by EU endpoint for /v1/projects — still reachable
+        if (!res.ok && 'status' in res && (res).status !== 401 && (res).status !== 404) {
           throw new Error('Deepgram unreachable');
         }
       }, 3000),
@@ -72,7 +75,7 @@ export function registerHealthRoute(
           { method: 'GET', signal: AbortSignal.timeout(3000) }
         ).catch(() => ({ ok: false }));
         // 401 means reachable but unauthorized — fine for health check
-        if (!res.ok && 'status' in res && (res).status !== 401) {
+        if (!res.ok && 'status' in res && (res).status !== 401 && (res).status !== 404) {
           throw new Error('Azure TTS unreachable');
         }
       }, 3000),
@@ -82,7 +85,7 @@ export function registerHealthRoute(
           signal: AbortSignal.timeout(3000),
         }).catch(() => ({ ok: false }));
         // 401 means reachable — fine for health check
-        if (!res.ok && 'status' in res && (res).status !== 401) {
+        if (!res.ok && 'status' in res && (res).status !== 401 && (res).status !== 404) {
           throw new Error('OpenAI unreachable');
         }
       }, 3000),
