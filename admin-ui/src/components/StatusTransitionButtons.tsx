@@ -2,12 +2,9 @@ import { useState } from 'react';
 import { Button, Stack, CircularProgress } from '@mui/material';
 import { useNotify, useRefresh } from 'react-admin';
 import type { CampaignStatus } from '../types';
-import { STATUS_TRANSITIONS, STATUS_TRANSITIONS as TRANS } from '../types';
+import { STATUS_TRANSITIONS } from '../types';
 import { setCampaignStatus } from '../services/api';
 import { CAMPAIGN_STATUS_COLORS, STATUS_TRANSITION_LABELS } from '../theme';
-
-// Suppress unused import lint — TRANS is the same reference
-void TRANS;
 
 interface StatusTransitionButtonsProps {
   campaignId: string;

@@ -140,4 +140,35 @@ describe('response interceptor — 401 handling', () => {
     expect(localStorage.getItem('accessToken')).toBeNull();
     expect(window.location.href).toBe('/app/#/login');
   });
+
+  it('concurrent 401s: queues second request, only one refresh call is made', async () => {
+    // This test covers the isRefreshing === true queue path (lines 30-38 of axiosClient.ts).
+    // Both requests get 401 simultaneously. The first triggers the refresh; the second
+    // is queued and retried automatically with the new token once refresh completes.
+    localStorage.setItem('accessToken', 'old-tok');
+    localStorage.setItem('refreshToken', 'ref-tok');
+
+    let r1Calls = 0;
+    let r2Calls = 0;
+    mockClient.onGet('/r1').reply(() => {
+      r1Calls++;
+      return r1Calls === 1 ? [401, {}] : [200, { from: 'r1' }];
+    });
+    mockClient.onGet('/r2').reply(() => {
+      r2Calls++;
+      return r2Calls === 1 ? [401, {}] : [200, { from: 'r2' }];
+    });
+    mockVanilla.onPost(REFRESH_URL).reply(200, { accessToken: 'shared-tok' });
+
+    const [res1, res2] = await Promise.all([
+      axiosClient.get('/r1'),
+      axiosClient.get('/r2'),
+    ]);
+
+    expect(res1.data).toEqual({ from: 'r1' });
+    expect(res2.data).toEqual({ from: 'r2' });
+    // Exactly one refresh call — the second request was queued, not independently refreshed
+    expect(mockVanilla.history.post).toHaveLength(1);
+    expect(localStorage.getItem('accessToken')).toBe('shared-tok');
+  });
 });

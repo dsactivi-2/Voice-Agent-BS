@@ -137,6 +137,70 @@ describe('dataProvider', () => {
     });
   });
 
+  describe('getMany', () => {
+    it('fetches each id individually and returns all records', async () => {
+      mockGet
+        .mockResolvedValueOnce({ data: { agent: { id: 'ag-1', name: 'Goran' } } })
+        .mockResolvedValueOnce({ data: { agent: { id: 'ag-2', name: 'Vesna' } } });
+
+      const result = await dataProvider.getMany('agents', { ids: ['ag-1', 'ag-2'] });
+
+      expect(mockGet).toHaveBeenCalledTimes(2);
+      expect(mockGet).toHaveBeenCalledWith('/agents/ag-1');
+      expect(mockGet).toHaveBeenCalledWith('/agents/ag-2');
+      expect(result.data).toHaveLength(2);
+      expect(result.data[0].id).toBe('ag-1');
+      expect(result.data[1].id).toBe('ag-2');
+    });
+
+    it('normalizes uuid field in getMany results', async () => {
+      mockGet.mockResolvedValueOnce({
+        data: { agent: { uuid: 'uuid-99', name: 'Test' } },
+      });
+
+      const result = await dataProvider.getMany('agents', { ids: ['uuid-99'] });
+
+      expect(result.data[0].id).toBe('uuid-99');
+    });
+  });
+
+  describe('getManyReference', () => {
+    it('delegates to getList with target/id merged into filter', async () => {
+      mockGet.mockResolvedValueOnce({ data: { dispositions: [], total: 0 } });
+
+      await dataProvider.getManyReference('dispositions', {
+        target: 'campaign_id',
+        id: 'camp-42',
+        pagination: { page: 1, perPage: 10 },
+        sort: { field: 'code', order: 'ASC' as const },
+        filter: { is_success: true },
+        meta: { campaignId: 'camp-42' },
+      });
+
+      const calledUrl = mockGet.mock.calls[0][0] as string;
+      // Should use nested URL because meta.campaignId is set
+      expect(calledUrl).toContain('/campaigns/camp-42/dispositions');
+      // Should include both the existing filter and the target/id filter
+      expect(calledUrl).toContain('campaign_id=camp-42');
+      expect(calledUrl).toContain('is_success=true');
+    });
+  });
+
+  describe('deleteMany', () => {
+    it('deletes each id individually', async () => {
+      mockDelete
+        .mockResolvedValueOnce({ data: {} })
+        .mockResolvedValueOnce({ data: {} });
+
+      const result = await dataProvider.deleteMany('agents', { ids: ['ag-1', 'ag-2'] });
+
+      expect(mockDelete).toHaveBeenCalledTimes(2);
+      expect(mockDelete).toHaveBeenCalledWith('/agents/ag-1');
+      expect(mockDelete).toHaveBeenCalledWith('/agents/ag-2');
+      expect(result.data).toEqual(['ag-1', 'ag-2']);
+    });
+  });
+
   describe('updateMany', () => {
     it('throws — not supported', async () => {
       await expect(dataProvider.updateMany('agents', { ids: ['1'], data: {} })).rejects.toThrow(
