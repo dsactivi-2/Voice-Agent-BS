@@ -984,7 +984,6 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     this.isBotSpeaking = true;
     this.turnTakingManager?.setBotSpeaking(true);
 
-    let fullResponseText = '';
     let llmResponse: LLMResponse | null = null;
 
     try {
@@ -1011,7 +1010,6 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       for (;;) {
         if (result.done) { break; }
         const token = result.value;
-        fullResponseText += token;
 
         // Feed only the reply_text value from the JSON response to TTS.
         // The LLM streams raw JSON tokens — we must skip keys/syntax.

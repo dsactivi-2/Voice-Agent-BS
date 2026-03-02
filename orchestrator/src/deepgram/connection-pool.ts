@@ -78,7 +78,8 @@ export class DeepgramConnectionPool {
     const entryIndex = this.available.findIndex((entry) => entry.language === language);
 
     if (entryIndex !== -1) {
-      const entry = this.available[entryIndex]!;
+      const entry = this.available[entryIndex];
+      if (!entry) throw new Error('Invariant: findIndex returned out-of-bounds index');
       this.available.splice(entryIndex, 1);
 
       // Verify the connection is still alive
