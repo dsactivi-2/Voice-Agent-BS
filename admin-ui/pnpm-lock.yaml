@@ -63,6 +63,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^4.0.18
         version: 4.0.18(vitest@4.0.18(jsdom@28.1.0))
+      axios-mock-adapter:
+        specifier: ^2.1.0
+        version: 2.1.0(axios@1.13.6)
       eslint:
         specifier: ^10.0.2
         version: 10.0.2
@@ -1130,6 +1133,11 @@ packages:
   autosuggest-highlight@3.3.4:
     resolution: {integrity: sha512-j6RETBD2xYnrVcoV1S5R4t3WxOlWZKyDQjkwnggDPSjF5L4jV98ZltBpvPvbkM1HtoSe5o+bNrTHyjPbieGeYA==}
 
+  axios-mock-adapter@2.1.0:
+    resolution: {integrity: sha512-AZUe4OjECGCNNssH8SOdtneiQELsqTsat3SQQCWLPjN436/H+L9AjWfV7bF+Zg/YL9cgbhrz5671hoh+Tbn98w==}
+    peerDependencies:
+      axios: '>= 0.17.0'
+
   axios@1.13.6:
     resolution: {integrity: sha512-ChTCHMouEe2kn713WHbQGcuYrr6fXTBiu460OTwWrWob16g1bXn4vtz07Ope7ewMozJAnEquLk5lWQWtBig9DQ==}
 
@@ -1549,6 +1557,10 @@ packages:
 
   is-arrayish@0.2.1:
     resolution: {integrity: sha512-zz06S8t0ozoDXMG+ube26zeCTNXcKIPJZJi8hBrF4idCLms4CG9QtK7qBl1boi5ODzFpjswb5JPmHCbMpjaYzg==}
+
+  is-buffer@2.0.5:
+    resolution: {integrity: sha512-i2R6zNFDwgEHJyQUtJEk0XFi1i0dPFn/oqjK3/vPCcDeJvW5NQ83V8QbicfF1SupOaB0h8ntgBC2YiE7dfyctQ==}
+    engines: {node: '>=4'}
 
   is-core-module@2.16.1:
     resolution: {integrity: sha512-UfoeMA6fIJ8wTYFEUjelnaGI67v6+N7qXJEvQuIGa99l4xsCruSYOVSQ0uPANn4dAzm8lkYPaKLrrijLq7x23w==}
@@ -3163,6 +3175,12 @@ snapshots:
     dependencies:
       remove-accents: 0.4.4
 
+  axios-mock-adapter@2.1.0(axios@1.13.6):
+    dependencies:
+      axios: 1.13.6
+      fast-deep-equal: 3.1.3
+      is-buffer: 2.0.5
+
   axios@1.13.6:
     dependencies:
       follow-redirects: 1.15.11
@@ -3630,6 +3648,8 @@ snapshots:
   inflection@3.0.2: {}
 
   is-arrayish@0.2.1: {}
+
+  is-buffer@2.0.5: {}
 
   is-core-module@2.16.1:
     dependencies:
