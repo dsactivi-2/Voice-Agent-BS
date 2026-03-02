@@ -12,7 +12,8 @@ import type { TelephonyEvents } from './telephony/provider.js';
 import type { CallResult } from './types.js';
 import type { FastifyRequest } from 'fastify';
 import { CallOrchestrator } from './call-orchestrator.js';
-import { routeVonageCall } from './agents/language-router.js';
+import { routeVonageCall, routeByLanguage } from './agents/language-router.js';
+import type { Language } from './types.js';
 import { initiateOutboundCall } from './vonage/outbound.js';
 import { z } from 'zod/v4';
 
@@ -111,8 +112,11 @@ export async function createServer(deps: ServerDependencies) {
     onMediaSessionReady: (callId, session, meta) => {
       logger.info({ callId, phoneNumber: meta.phoneNumber, fromNumber: meta.fromNumber }, 'Media session ready — creating CallOrchestrator');
 
-      // Determine agent config based on the called Vonage number
-      const agentConfig = routeVonageCall(meta.fromNumber);
+      // Outbound calls carry an explicit language in meta; inbound calls fall back
+      // to VONAGE_DEFAULT_LANGUAGE via routeVonageCall.
+      const agentConfig = meta.language
+        ? routeByLanguage(meta.language as Language)
+        : routeVonageCall(meta.fromNumber);
 
       const orchestrator = new CallOrchestrator({
         callId,

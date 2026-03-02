@@ -2,7 +2,7 @@ import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { agentBS } from './agent-bs.js';
 import { agentSR } from './agent-sr.js';
-import type { AgentConfig } from '../types.js';
+import type { AgentConfig, Language } from '../types.js';
 
 /**
  * Normalises a phone number to a consistent format for comparison.
@@ -82,6 +82,24 @@ export function routeVonageCall(calledNumber: string): AgentConfig {
   logger.info(
     { calledNumber, language: agent.language },
     'Vonage call routed by VONAGE_DEFAULT_LANGUAGE',
+  );
+
+  return agent;
+}
+
+/**
+ * Resolves an AgentConfig directly from a BCP-47 language tag.
+ * Used for outbound calls where the language is explicitly specified in the API request.
+ *
+ * @param language - BCP-47 language tag ('bs-BA' or 'sr-RS')
+ * @returns The matching AgentConfig
+ */
+export function routeByLanguage(language: Language): AgentConfig {
+  const agent = language === 'sr-RS' ? agentSR : agentBS;
+
+  logger.info(
+    { language, agent: agent.ttsVoice },
+    'Agent routed by explicit language',
   );
 
   return agent;
