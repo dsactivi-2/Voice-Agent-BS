@@ -21,8 +21,8 @@ const envSchema = z.object({
   VONAGE_SIGNATURE_SECRET: z.string().optional(),
   VONAGE_DEFAULT_LANGUAGE: z.enum(['bs-BA', 'sr-RS']).default('bs-BA'),
 
-  // Deepgram (optional — kept for potential A/B testing)
-  DEEPGRAM_API_KEY: z.string().optional(),
+  // Deepgram (primary ASR — nova-3 streaming)
+  DEEPGRAM_API_KEY: z.string().min(1),
 
   // Groq (Whisper ASR)
   GROQ_API_KEY: z.string().min(1),
