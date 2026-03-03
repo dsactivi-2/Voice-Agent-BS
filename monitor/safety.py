@@ -122,11 +122,26 @@ def rollback_env(backup_path: Path) -> bool:
 # ---------------------------------------------------------------------------
 
 def restart_container() -> bool:
-    """Restart the orchestrator container via docker compose."""
+    """Restart the orchestrator container via docker on the host.
+
+    Uses the Docker socket mounted into the container. The compose file path
+    is passed via the COMPOSE_PROJECT_DIR env var or defaults to the standard
+    voice-system path.
+    """
     log.info("Restarting orchestrator container...")
     try:
+        # Find orchestrator container by name pattern
+        find = subprocess.run(
+            ["docker", "ps", "-q", "--filter", "name=voice-system.*orchestrator"],
+            capture_output=True, text=True, timeout=10,
+        )
+        container_id = find.stdout.strip()
+        if not container_id:
+            log.error("Orchestrator container not found")
+            return False
+
         subprocess.run(
-            ["docker", "compose", "-f", str(COMPOSE_FILE), "restart", "orchestrator"],
+            ["docker", "restart", container_id],
             check=True,
             capture_output=True,
             text=True,
