@@ -515,12 +515,10 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       // Feed to VAD for speech detection
       this.vadDetector?.processAudio(buffer);
 
-      // Feed audio to speech buffer only when bot is NOT speaking.
-      // When bot is speaking, the customer channel carries echo of the bot's TTS output.
-      // This echo would contaminate the speech buffer and get transcribed instead of the customer.
-      if (!this.isBotSpeaking) {
-        this.speechBuffer?.addChunk(buffer);
-      }
+      // Feed audio to speech buffer (always).
+      // Echo contamination during bot speaking is handled by the barge-in handler,
+      // which clears and restarts the buffer when the customer interrupts.
+      this.speechBuffer?.addChunk(buffer);
 
       // Mark that caller has recent audio activity
       if (this.session) {
