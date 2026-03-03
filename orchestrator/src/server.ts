@@ -20,12 +20,10 @@ import { z } from 'zod/v4';
 // These will be injected when DB and Redis are initialized
 import type { Pool } from 'pg';
 import type { Redis } from 'ioredis';
-import type { DeepgramConnectionPool } from './deepgram/connection-pool.js';
 
 interface ServerDependencies {
   dbPool: Pool;
   redis: Redis;
-  deepgramPool?: DeepgramConnectionPool;
 }
 
 // Track active calls globally
@@ -126,7 +124,6 @@ export async function createServer(deps: ServerDependencies) {
         agentConfig,
         campaignId: 'default',
         mediaSession: session as unknown as import('./telephony/provider.js').MediaSession,
-        deepgramPool: deps.deepgramPool,
       });
 
       activeOrchestrators.set(callId, orchestrator);
@@ -212,10 +209,7 @@ export async function createServer(deps: ServerDependencies) {
     { name: 'redis', fn: () => { deps.redis.disconnect(); return Promise.resolve(); } },
     { name: 'postgres', fn: async () => { await deps.dbPool.end(); } },
   ];
-  if (deps.deepgramPool) {
-    const pool = deps.deepgramPool;
-    closeFns.push({ name: 'deepgramPool', fn: async () => { await pool.closeAll(); } });
-  }
+
   setupGracefulShutdown({
     server: app,
     getActiveCalls,

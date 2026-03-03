@@ -56,7 +56,7 @@ export interface Turn {
 export interface AgentConfig {
   language: Language;
   telnyxPhoneNumber: string;
-  deepgramLanguage: string;
+  asrLanguage: string;
   ttsVoice: string;
   systemPrompt: string;
   fillerLibrary: Record<FillerType, string[]>;

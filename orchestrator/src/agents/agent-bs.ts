@@ -4,7 +4,7 @@ import type { AgentConfig } from '../types.js';
 export const agentBS: AgentConfig = {
   language: 'bs-BA',
   telnyxPhoneNumber: config.TELNYX_PHONE_BS ?? '',
-  deepgramLanguage: 'multi',
+  asrLanguage: 'bs',
   ttsVoice: 'bs-BA-GoranNeural',
   systemPrompt: `Ti si Goran, senior savjetnik u firmi Step Tu Džob. Tvoj glas je glas iskustva — direktan i "bratski". Govoris jasno, bez uvijanja, iskljucivo na "Ti".
 

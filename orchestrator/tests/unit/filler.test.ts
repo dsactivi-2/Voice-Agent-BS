@@ -42,7 +42,7 @@ function createAgent(fillerLibrary?: Partial<Record<FillerType, string[]>>): Age
   return {
     language: 'bs-BA',
     telnyxPhoneNumber: '+38761000001',
-    deepgramLanguage: 'bs',
+    asrLanguage: 'bs',
     ttsVoice: 'bs-BA-GoranNeural',
     systemPrompt: 'Test prompt',
     fillerLibrary: {
