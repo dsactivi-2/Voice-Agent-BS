@@ -30,7 +30,7 @@ import { SpeechBuffer } from './asr/speech-buffer.js';
 import { RingBuffer } from './audio/ring-buffer.js';
 
 // VAD + Turn-Taking
-import { VADDetector } from './vad/detector.js';
+import { VADDetector, calculateRMS } from './vad/detector.js';
 import { TurnTakingManager } from './vad/turn-taking.js';
 
 // LLM
@@ -290,17 +290,20 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
             // Final: accumulate segments within the utterance
             deepgramAccumulator = (deepgramAccumulator + ' ' + event.text).trim();
 
-            logger.info(
-              { callId: this.callId, text: deepgramAccumulator, confidence: event.confidence, speechFinal: event.speechFinal },
-              'ASR FINAL transcript (Deepgram)',
-            );
-
-            // Forward accumulated text as final to TurnTaking
-            this.turnTakingManager?.onTranscriptReceived(true, deepgramAccumulator);
-
-            // Reset accumulator on speech endpoint (utterance complete)
             if (event.speechFinal) {
+              // Utterance complete → send accumulated text as final to TurnTaking
+              logger.info(
+                { callId: this.callId, text: deepgramAccumulator, confidence: event.confidence },
+                'ASR FINAL transcript (Deepgram)',
+              );
+              this.turnTakingManager?.onTranscriptReceived(true, deepgramAccumulator);
               deepgramAccumulator = '';
+            } else {
+              // Mid-utterance is_final — accumulate only, don't trigger turn
+              logger.debug(
+                { callId: this.callId, accumulated: deepgramAccumulator, confidence: event.confidence },
+                'Deepgram is_final (mid-utterance) — accumulating',
+              );
             }
           });
 
@@ -607,21 +610,63 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
   // Media session event handlers
   // ════════════════════════════════════════════════════════════════
 
+  /** Elevated RMS threshold for barge-in during bot speech.
+   *  PSTN echo is typically -15 to -30 dB attenuated (RMS 0.01-0.03).
+   *  A live human voice at close range is RMS 0.05-0.3+. */
+  private static readonly BARGE_IN_RMS_THRESHOLD = 0.05;
+  /** Grace period after bot stops speaking during which Deepgram is still muted
+   *  to catch trailing echo. VAD and SpeechBuffer remain active for responsiveness. */
+  private static readonly ECHO_GRACE_MS = 600;
+
   private onMediaAudio = (buffer: Buffer): void => {
     if (this.stopped) return;
 
     try {
-      // Write to ring buffer for potential replay/diagnostics
+      const now = Date.now();
+
+      // Always write to ring buffer for diagnostics/replay
       this.ringBuffer?.write(buffer);
 
-      // Feed to VAD for speech detection
+      // ── Audio Gating: 3 modes based on bot speaking state ──
+
+      if (this.isBotSpeaking) {
+        // MODE 1: BOT IS SPEAKING — block Deepgram + SpeechBuffer entirely.
+        // Feed VAD only if energy exceeds elevated threshold (barge-in detection
+        // for loud interruptions while rejecting attenuated PSTN echo).
+        const rms = calculateRMS(buffer);
+        if (rms >= CallOrchestrator.BARGE_IN_RMS_THRESHOLD) {
+          this.vadDetector?.processAudio(buffer);
+        }
+        // Throughput tracking continues (for monitoring)
+        this.audioBytesSinceLog += buffer.length;
+        if (now - this.audioLastLogAt >= 5000) {
+          const intervalSec = (now - this.audioLastLogAt) / 1000;
+          logger.info(
+            { callId: this.callId, bytesPerSec: Math.round(this.audioBytesSinceLog / intervalSec), mode: 'bot-speaking' },
+            'Audio throughput check',
+          );
+          this.audioBytesSinceLog = 0;
+          this.audioLastLogAt = now;
+        }
+        return;
+      }
+
+      const inEchoGrace = this.lastBotSpeakingEndTime > 0 &&
+        now - this.lastBotSpeakingEndTime < CallOrchestrator.ECHO_GRACE_MS;
+
+      if (inEchoGrace) {
+        // MODE 2: ECHO GRACE — block Deepgram to prevent trailing echo from
+        // producing ghost transcripts. VAD + SpeechBuffer stay active for
+        // responsive turn detection and Whisper fallback.
+        this.vadDetector?.processAudio(buffer);
+        this.speechBuffer?.addChunk(buffer);
+        this.audioBytesSinceLog += buffer.length;
+        return;
+      }
+
+      // MODE 3: NORMAL — full pipeline, no echo risk.
       this.vadDetector?.processAudio(buffer);
-
-      // Stream audio to Deepgram (always — echo handled at transcript level)
       this.deepgramClient?.sendAudio(buffer);
-
-      // Feed audio to speech buffer (for Whisper fallback insurance).
-      // addChunk is a no-op when capture is not active.
       this.speechBuffer?.addChunk(buffer);
 
       // Mark that caller has recent audio activity
@@ -631,7 +676,6 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
       // Track audio throughput (log every 5s)
       this.audioBytesSinceLog += buffer.length;
-      const now = Date.now();
       if (now - this.audioLastLogAt >= 5000) {
         const intervalSec = (now - this.audioLastLogAt) / 1000;
         logger.info(
