@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 
 vi.mock('../../src/utils/logger.js', () => ({
@@ -50,6 +50,7 @@ class MockLiveClient extends EventEmitter {
   send = vi.fn();
   finish = vi.fn();
   requestClose = vi.fn();
+  keepAlive = vi.fn();
 }
 
 // ---------------------------------------------------------------------------
@@ -222,5 +223,76 @@ describe('DeepgramASRClient', () => {
 
     await connectClient(client);
     expect(client.isConnected()).toBe(true);
+  });
+
+  // ── KeepAlive ───────────────────────────────────────────────────────────
+
+  describe('KeepAlive', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('calls keepAlive() on the live client every 8 seconds while connected', async () => {
+      const client = new DeepgramASRClient('bs', 'test-key');
+      await connectClient(client);
+
+      expect(liveMock.current.keepAlive).not.toHaveBeenCalled();
+
+      // Advance past first interval
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(liveMock.current.keepAlive).toHaveBeenCalledTimes(1);
+
+      // Advance another full interval
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(liveMock.current.keepAlive).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not call keepAlive() after close()', async () => {
+      const client = new DeepgramASRClient('bs', 'test-key');
+      await connectClient(client);
+
+      liveMock.current.requestClose.mockImplementation(() => {
+        process.nextTick(() => liveMock.current.emit('close'));
+      });
+
+      await client.close();
+
+      // Timer should be cleared — no more keepAlive calls
+      await vi.advanceTimersByTimeAsync(16_000);
+      expect(liveMock.current.keepAlive).not.toHaveBeenCalled();
+    });
+
+    it('does not call keepAlive() after Deepgram closes the connection', async () => {
+      const client = new DeepgramASRClient('bs', 'test-key');
+      // Prevent scheduleReconnect from attempting a real connect
+      vi.spyOn(client as unknown as { scheduleReconnect: () => void }, 'scheduleReconnect' as never).mockImplementation(() => {});
+
+      await connectClient(client);
+
+      // Simulate Deepgram closing the connection server-side
+      liveMock.current.emit('close');
+
+      // Timer should be cleared — no keepAlive after disconnect
+      await vi.advanceTimersByTimeAsync(16_000);
+      expect(liveMock.current.keepAlive).not.toHaveBeenCalled();
+    });
+
+    it('keepAlive() is only called when the connection is still open', async () => {
+      const client = new DeepgramASRClient('bs', 'test-key');
+      await connectClient(client);
+
+      // Manually mark as disconnected without triggering the close flow
+      // (simulates the race between timer firing and connection dropping)
+      (client as unknown as { connected: boolean }).connected = false;
+
+      await vi.advanceTimersByTimeAsync(8_000);
+
+      // keepAlive should not be called on a disconnected client
+      expect(liveMock.current.keepAlive).not.toHaveBeenCalled();
+    });
   });
 });

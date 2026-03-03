@@ -32,6 +32,11 @@ interface DeepgramResult {
 const RECONNECT_DELAYS_MS = [500, 1000, 2000] as const;
 /** Maximum reconnect attempts before giving up. */
 const MAX_RECONNECT_ATTEMPTS = 3;
+/**
+ * Interval for sending KeepAlive messages to Deepgram.
+ * Deepgram closes idle WebSocket connections after ~10s; we ping every 8s.
+ */
+const KEEP_ALIVE_INTERVAL_MS = 8_000;
 
 /**
  * Streaming ASR client wrapping the official Deepgram SDK LiveClient.
@@ -48,6 +53,7 @@ export class DeepgramASRClient extends EventEmitter<DeepgramASRClientEvents> {
   private connected = false;
   private closing = false;
   private reconnectAttempts = 0;
+  private keepAliveTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(language: DeepgramLanguage, apiKey: string) {
     super();
@@ -148,6 +154,7 @@ export class DeepgramASRClient extends EventEmitter<DeepgramASRClientEvents> {
 
       this.liveClient.on(LiveTranscriptionEvents.Open, () => {
         this.connected = true;
+        this.startKeepAlive();
         logger.info({ language: this.language }, 'Deepgram: WebSocket connected');
         resolve();
       });
@@ -190,6 +197,7 @@ export class DeepgramASRClient extends EventEmitter<DeepgramASRClientEvents> {
         const wasConnected = this.connected;
         this.connected = false;
         this.liveClient = null;
+        this.stopKeepAlive();
 
         logger.info(
           { language: this.language, closing: this.closing },
@@ -226,11 +234,13 @@ export class DeepgramASRClient extends EventEmitter<DeepgramASRClientEvents> {
     return new Promise<void>((resolve) => {
       if (!this.liveClient || this.closing) {
         this.connected = false;
+        this.stopKeepAlive();
         resolve();
         return;
       }
 
       this.closing = true;
+      this.stopKeepAlive();
 
       this.liveClient.once(LiveTranscriptionEvents.Close, () => {
         this.connected = false;
@@ -257,6 +267,23 @@ export class DeepgramASRClient extends EventEmitter<DeepgramASRClientEvents> {
     return this.connected && this.liveClient !== null;
   }
 
+  private startKeepAlive(): void {
+    this.stopKeepAlive();
+    this.keepAliveTimer = setInterval(() => {
+      if (this.liveClient && this.connected) {
+        this.liveClient.keepAlive();
+      }
+    }, KEEP_ALIVE_INTERVAL_MS);
+    this.keepAliveTimer.unref();
+  }
+
+  private stopKeepAlive(): void {
+    if (this.keepAliveTimer !== null) {
+      clearInterval(this.keepAliveTimer);
+      this.keepAliveTimer = null;
+    }
+  }
+
   private scheduleReconnect(): void {
     if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
       logger.error(
@@ -279,7 +306,7 @@ export class DeepgramASRClient extends EventEmitter<DeepgramASRClientEvents> {
       'Deepgram: scheduling reconnect',
     );
 
-setTimeout(() => {
+    setTimeout(() => {
       void (async () => {
         if (this.closing) return;
         try {
