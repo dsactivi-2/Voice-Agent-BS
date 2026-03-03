@@ -38,7 +38,7 @@ import { ChunkedTTSPipeline } from './tts/chunked-stream.js';
 import { getCachedAudio } from './tts/cache.js';
 
 // Filler
-import { selectFiller, getFillerPhrase } from './filler.js';
+import { selectFiller } from './filler.js';
 
 // Session
 import { calculateAdaptiveDelay } from './session/adaptive-delay.js';
@@ -150,6 +150,10 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
   /** Monotonically increasing counter used to detect stale finally-blocks after barge-in. */
   private activeTurnId: number = 0;
   private currentLLMAbortController: AbortController | null = null;
+
+  // ── Clarification loop guard ──────────────────────────────────────
+  private clarificationCount: number = 0;
+  private readonly MAX_CLARIFICATIONS: number = 2;
 
   constructor(params: CallOrchestratorParams) {
     super();
@@ -898,23 +902,24 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     if (fillerType === null) return;
 
     try {
-      const phrase = getFillerPhrase(this.agentConfig, fillerType);
       const suffix = this.agentConfig.language === 'bs-BA' ? 'bs' : 'sr';
+      // Cache key is deterministic: filler_<type>_<lang> — matches the warmup key format.
+      // We do not call getFillerPhrase() here because the randomly selected phrase text
+      // is not used for the cache lookup; using the type directly guarantees a cache hit.
       const cacheKey = `filler_${fillerType}_${suffix}`;
 
-      // Try cached version first
       const cached = await getCachedAudio(`${cacheKey}:${this.agentConfig.language}`);
       if (cached && this.mediaSession.isOpen()) {
         ttsCacheHits.inc();
         this.mediaSession.sendAudio(cached);
         logger.debug(
-          { fillerType, phrase, callId: this.callId },
+          { fillerType, callId: this.callId },
           'Filler audio played from cache',
         );
       } else {
         ttsCacheMisses.inc();
         logger.debug(
-          { fillerType, phrase, callId: this.callId },
+          { fillerType, callId: this.callId },
           'Filler cache miss — skipping filler playback',
         );
       }
@@ -945,6 +950,12 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     const messages = this.memoryManager.buildLLMContext(this.agentConfig.systemPrompt);
     messages.push({ role: 'user', content: transcript });
 
+    // Prevent intro repetition after the first turn — prompt has the rule,
+    // this is a safety-net system message that reinforces it.
+    if (this.turnCounter > 1) {
+      messages.push({ role: 'system', content: 'REMINDER: Ne ponavljaj pozdrav. Nastavi razgovor.' });
+    }
+
     // Capture turn ID — if barge-in fires, activeTurnId increments and we stop feeding TTS.
     const myProcessTurnId = this.activeTurnId;
 
@@ -968,7 +979,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
     // 2. Calculate adaptive delay — subtract filler+processing latency already elapsed
     const actualLatencyMs = Date.now() - turnStartTime;
-    const adaptiveDelayMs = calculateAdaptiveDelay(transcript, actualLatencyMs);
+    const adaptiveDelayMs = calculateAdaptiveDelay(transcript, actualLatencyMs, this.session.llmMode);
 
     // 3. Create a new TTS pipeline for this turn
     this.currentTTSPipeline = new ChunkedTTSPipeline(
@@ -997,7 +1008,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       const generator = streamLLMResponse({
         model,
         messages,
-        maxTokens: 120,
+        maxTokens: 200,
         signal: this.currentLLMAbortController.signal,
       });
 
@@ -1086,8 +1097,43 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       }
     }
 
-    // 7. Process the LLM response (update session state)
+    // 7. Post-LLM guards: sanitize truncated replies, suppress intro repetition, detect clarification loops
     if (llmResponse) {
+      const introPattern = /dobar dan.*(?:goran|vesna).*step/i;
+      const clarificationPattern = /molim|pojasniti|ponoviti|razumijem\s*\?/i;
+
+      // A. Sanitize truncated replies (missing sentence-ending punctuation)
+      const trimmedReply = llmResponse.reply_text.trim();
+      if (trimmedReply.length > 0 && !/[.!?\u2026]$/.test(trimmedReply)) {
+        if (trimmedReply.length < 10) {
+          llmResponse.reply_text = this.agentConfig.cachedPhrases['repeat'] ?? trimmedReply + '.';
+          logger.warn({ callId: this.callId, original: trimmedReply }, 'Truncated LLM reply replaced with repeat phrase');
+        } else {
+          llmResponse.reply_text = trimmedReply + '.';
+          logger.warn({ callId: this.callId }, 'Truncated LLM reply — appended period');
+        }
+      }
+
+      // B. Intro suppression: replace repeated greeting with still_there
+      if (this.turnCounter > 1 && introPattern.test(llmResponse.reply_text)) {
+        llmResponse.reply_text = this.agentConfig.cachedPhrases['still_there'] ?? 'Jeste li jos tu?';
+        logger.warn({ callId: this.callId, turn: this.turnCounter }, 'Intro repetition suppressed');
+      }
+
+      // C. Clarification loop: detect "Molim? / Pojasniti?" loops and end call
+      if (clarificationPattern.test(llmResponse.reply_text)) {
+        this.clarificationCount++;
+        if (this.clarificationCount >= this.MAX_CLARIFICATIONS) {
+          logger.warn({ callId: this.callId, count: this.clarificationCount }, 'Clarification loop detected — ending call');
+          const suffix = this.agentConfig.language === 'bs-BA' ? 'bs' : 'sr';
+          void this.playAudioFromCache(`bad_connection_${suffix}`);
+          void this.stop('error');
+          return;
+        }
+      } else {
+        this.clarificationCount = 0;
+      }
+
       this.updateSessionFromResponse(llmResponse, transcript);
     }
 

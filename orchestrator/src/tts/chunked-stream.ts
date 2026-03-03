@@ -13,11 +13,11 @@ const CHUNK_TRIGGERS = ['.', '!', '?'] as const;
 
 /** Minimum character count before a chunk is eligible for flushing.
  * Set high enough to avoid sending tiny fragments to Azure TTS. */
-const MIN_CHUNK_LENGTH = 40;
+const MIN_CHUNK_LENGTH = 20;
 
 /** Maximum milliseconds to wait before forcing a flush.
  * Reduced to keep latency reasonable for very long sentences. */
-const MAX_WAIT_MS = 500;
+const MAX_WAIT_MS = 300;
 
 /** Callback type for receiving synthesized PCM audio chunks. */
 export type AudioChunkCallback = (audio: Buffer, text: string) => void;
