@@ -611,9 +611,10 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
   // ════════════════════════════════════════════════════════════════
 
   /** Elevated RMS threshold for barge-in during bot speech.
-   *  PSTN echo is typically -15 to -30 dB attenuated (RMS 0.01-0.03).
-   *  A live human voice at close range is RMS 0.05-0.3+. */
-  private static readonly BARGE_IN_RMS_THRESHOLD = 0.05;
+   *  PSTN hybrid echo is typically -10 to -20 dB (RMS 0.10-0.30).
+   *  A live human voice at close range is RMS 0.15-0.50+.
+   *  Set above typical echo to avoid false barge-in. */
+  private static readonly BARGE_IN_RMS_THRESHOLD = 0.15;
   /** Grace period after bot stops speaking during which Deepgram is still muted
    *  to catch trailing echo. VAD and SpeechBuffer remain active for responsiveness. */
   private static readonly ECHO_GRACE_MS = 600;
@@ -635,7 +636,17 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         // for loud interruptions while rejecting attenuated PSTN echo).
         const rms = calculateRMS(buffer);
         if (rms >= CallOrchestrator.BARGE_IN_RMS_THRESHOLD) {
+          logger.debug(
+            { callId: this.callId, rms: rms.toFixed(4), threshold: CallOrchestrator.BARGE_IN_RMS_THRESHOLD, mode: 'bot-speaking-pass' },
+            'Echo guard: loud audio passed to VAD during bot speech',
+          );
           this.vadDetector?.processAudio(buffer);
+        } else if (rms >= 0.02) {
+          // Log echo-range audio that gets blocked (only above noise floor)
+          logger.debug(
+            { callId: this.callId, rms: rms.toFixed(4), threshold: CallOrchestrator.BARGE_IN_RMS_THRESHOLD, mode: 'bot-speaking-block' },
+            'Echo guard: audio blocked during bot speech',
+          );
         }
         // Throughput tracking continues (for monitoring)
         this.audioBytesSinceLog += buffer.length;
