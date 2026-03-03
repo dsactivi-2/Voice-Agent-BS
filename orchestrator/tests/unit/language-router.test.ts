@@ -42,7 +42,7 @@ describe('routeByPhoneNumber', () => {
     const agent = routeByPhoneNumber('+38733123456');
 
     expect(agent.language).toBe('bs-BA');
-    expect(agent.deepgramLanguage).toBe('bs');
+    expect(agent.deepgramLanguage).toBe('multi');
     expect(agent.ttsVoice).toBe('bs-BA-GoranNeural');
     expect(agent.telnyxPhoneNumber).toBe('+38733123456');
   });
@@ -51,7 +51,7 @@ describe('routeByPhoneNumber', () => {
     const agent = routeByPhoneNumber('+381111234567');
 
     expect(agent.language).toBe('sr-RS');
-    expect(agent.deepgramLanguage).toBe('sr');
+    expect(agent.deepgramLanguage).toBe('multi');
     expect(agent.ttsVoice).toBe('sr-RS-SophieNeural');
     expect(agent.telnyxPhoneNumber).toBe('+381111234567');
   });
@@ -79,7 +79,7 @@ describe('routeByPhoneNumber', () => {
     const agent = routeByPhoneNumber('+4915112345678');
 
     expect(agent.language).toBe('bs-BA');
-    expect(agent.deepgramLanguage).toBe('bs');
+    expect(agent.deepgramLanguage).toBe('multi');
     expect(agent.ttsVoice).toBe('bs-BA-GoranNeural');
   });
 
@@ -128,7 +128,7 @@ describe('routeByLanguage', () => {
 
     expect(agent.language).toBe('bs-BA');
     expect(agent.ttsVoice).toBe('bs-BA-GoranNeural');
-    expect(agent.deepgramLanguage).toBe('bs');
+    expect(agent.deepgramLanguage).toBe('multi');
   });
 
   it('returns SR agent for sr-RS', () => {
@@ -136,7 +136,7 @@ describe('routeByLanguage', () => {
 
     expect(agent.language).toBe('sr-RS');
     expect(agent.ttsVoice).toBe('sr-RS-SophieNeural');
-    expect(agent.deepgramLanguage).toBe('sr');
+    expect(agent.deepgramLanguage).toBe('multi');
   });
 
   it('returns a complete AgentConfig for bs-BA', () => {
