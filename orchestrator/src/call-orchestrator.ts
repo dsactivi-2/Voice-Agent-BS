@@ -1,3 +1,4 @@
+import { detectEmotions, generateResponseStrategy, EmotionScores } from './emotion/detector.js';
 import { ASR_PROVIDER } from './config.js';
 import { EventEmitter } from 'node:events';
 import { config } from './config.js';
@@ -198,6 +199,8 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
   // ── Clarification loop guard ──────────────────────────────────────
   private clarificationCount: number = 0;
+  private emotionalState: EmotionScores | null = null;
+  private previousTranscripts: string[] = [];
   private readonly MAX_CLARIFICATIONS: number = 2;
 
   // ── Goodbye detection ─────────────────────────────────────────────
@@ -385,6 +388,20 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
             const trimmed = text.trim();
             if (trimmed.length === 0) return;
+    
+    // Analyse Emotionen des Anrufers
+    this.emotionalState = detectEmotions(trimmed, this.previousTranscripts);
+    this.previousTranscripts.push(trimmed);
+    if (this.previousTranscripts.length > 10) this.previousTranscripts.shift();
+    
+    logger.info({
+      callId: this.callId,
+      frustration: this.emotionalState.frustration.toFixed(2),
+      interest: this.emotionalState.interest.toFixed(2),
+      fatigue: this.emotionalState.fatigue.toFixed(2),
+      engagement: this.emotionalState.engagement.toFixed(2),
+    }, "Emotion Analysis");
+
 
             logger.info(
               { callId: this.callId, text: trimmed, audioBytes: audio.length, durationMs: Math.round(audio.length / 32) },
