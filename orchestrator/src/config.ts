@@ -26,7 +26,7 @@ const envSchema = z.object({
 
   // Groq (Whisper ASR)
   GROQ_API_KEY: z.string().min(1),
-  DEEPGRAM_BASE_URL: z.string().check(z.url()).optional(),
+  DEEPGRAM_BASE_URL: z.url().optional(),
 
   // OpenAI
   OPENAI_API_KEY: z.string().min(1),
@@ -61,7 +61,7 @@ const envSchema = z.object({
 
   // TTS
   TTS_VOICE_BS: z.string().default('bs-BA-GoranNeural'),
-  TTS_VOICE_SR: z.string().default('sr-RS-NicholasNeural'),
+  TTS_VOICE_SR: z.string().default('sr-RS-SophieNeural'),
   TTS_FORMAT: z.string().default('raw-16khz-16bit-mono-pcm'),
   TTS_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86400),
 
