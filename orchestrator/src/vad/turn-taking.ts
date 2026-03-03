@@ -344,7 +344,13 @@ export class TurnTakingManager extends EventEmitter<TurnTakingEvents> {
         const fallback = this.lastInterimTranscript;
         this.lastInterimTranscript = '';
 
-        if (fallback.length > 3) {
+        // Check that the fallback contains at least one real word (>3 letters),
+        // not just ASR garbage like "Tlan" or random consonant clusters.
+        const hasRealWord = fallback.split(/\s+/).some(
+          (w) => w.replace(/[^a-zA-Z\u010D\u0107\u0161\u017E\u0111\u010C\u0106\u0160\u017D\u0110]/g, '').length > 3,
+        );
+
+        if (hasRealWord) {
           // Use the last interim transcript as a best-effort fallback
           logger.warn(
             { fallbackTranscript: fallback },
