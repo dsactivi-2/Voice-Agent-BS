@@ -241,6 +241,24 @@ services:
     networks:
       - internal
 
+
+  # ============================================================
+  # Voice Monitor — auto-fix monitoring (runs via systemd timer)
+  # ============================================================
+  monitor:
+    image: voice-monitor:local
+    env_file: .env
+    environment:
+      - HEALTH_URL=http://orchestrator:3000/health
+      - PROMETHEUS_URL=http://prometheus:9090
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/voice-system:/opt/voice-system:ro
+      - /opt/callagent-ops-data/monitor:/data
+    profiles: ["monitor"]
+    networks:
+      - internal
+
 # ============================================================
 # Named volumes
 # ============================================================
@@ -258,3 +276,4 @@ volumes:
 networks:
   internal:
     driver: bridge
+
