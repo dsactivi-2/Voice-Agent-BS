@@ -16,7 +16,12 @@ import type {
 // Telephony
 import type { MediaSession } from './telephony/provider.js';
 
-// Whisper ASR (Groq primary, OpenAI fallback)
+// Deepgram ASR (primary — nova-3 streaming)
+import { DeepgramASRClient } from './deepgram/client.js';
+import type { DeepgramLanguage } from './deepgram/client.js';
+import type { DeepgramConnectionPool } from './deepgram/connection-pool.js';
+
+// Whisper ASR (fallback — Groq primary, OpenAI secondary)
 import { WhisperClient } from './asr/whisper-client.js';
 import type { ASRLanguage } from './asr/whisper-client.js';
 import { SpeechBuffer } from './asr/speech-buffer.js';
@@ -97,6 +102,7 @@ export interface CallOrchestratorParams {
   agentConfig: AgentConfig;
   campaignId: string;
   mediaSession: MediaSession;
+  deepgramPool?: DeepgramConnectionPool;
 }
 
 // ---------------------------------------------------------------------------
@@ -127,6 +133,14 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
   private vadDetector: VADDetector | null = null;
   private turnTakingManager: TurnTakingManager | null = null;
   private ringBuffer: RingBuffer | null = null;
+
+  // Deepgram ASR (primary)
+  private readonly deepgramPool: DeepgramConnectionPool | null = null;
+  private deepgramClient: DeepgramASRClient | null = null;
+  /** When true, VAD speechEnd flushes audio to Whisper REST instead of relying on Deepgram streaming. */
+  private useWhisperFallback: boolean = false;
+
+  // Whisper ASR (fallback)
   private whisperClient: WhisperClient | null = null;
   private speechBuffer: SpeechBuffer | null = null;
   private speechCaptureTimer: ReturnType<typeof setTimeout> | null = null;
@@ -163,6 +177,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     this.agentConfig = params.agentConfig;
     this.campaignId = params.campaignId;
     this.mediaSession = params.mediaSession;
+    this.deepgramPool = params.deepgramPool ?? null;
   }
 
   // ════════════════════════════════════════════════════════════════
@@ -238,19 +253,90 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       this.bindMediaSessionEvents();
       this.bindTurnTakingEvents();
 
-      // 7. Initialize Whisper ASR (REST-based, no WebSocket connection needed)
+      // 7. Initialize ASR: Deepgram nova-3 (primary) + Whisper REST (fallback)
       this.whisperClient = new WhisperClient(config.GROQ_API_KEY, config.OPENAI_API_KEY);
       this.speechBuffer = new SpeechBuffer();
 
       const asrLanguage = this.agentConfig.asrLanguage as ASRLanguage;
 
-      // Helper: flush speech buffer and send to Whisper
+      // 7a. Acquire Deepgram streaming connection from pool
+      if (this.deepgramPool) {
+        try {
+          const deepgramLang = asrLanguage as DeepgramLanguage;
+          this.deepgramClient = await this.deepgramPool.acquire(deepgramLang);
+
+          // Accumulate is_final segments within an utterance (reset on speech_final)
+          let deepgramAccumulator = '';
+
+          this.deepgramClient.on('transcript', (event) => {
+            if (this.stopped) return;
+
+            // Echo guard: drop transcripts while bot is speaking or within 800ms grace
+            if (this.isBotSpeaking) {
+              logger.debug({ callId: this.callId, text: event.text }, 'Deepgram transcript dropped — bot is speaking');
+              return;
+            }
+            if (this.lastBotSpeakingEndTime > 0 && Date.now() - this.lastBotSpeakingEndTime < 800) {
+              logger.debug({ callId: this.callId, text: event.text, msSinceBotStopped: Date.now() - this.lastBotSpeakingEndTime }, 'Deepgram transcript dropped — echo guard');
+              return;
+            }
+
+            if (!event.isFinal) {
+              // Interim: forward for TurnTaking interim tracking
+              this.turnTakingManager?.onTranscriptReceived(false, event.text);
+              return;
+            }
+
+            // Final: accumulate segments within the utterance
+            deepgramAccumulator = (deepgramAccumulator + ' ' + event.text).trim();
+
+            logger.info(
+              { callId: this.callId, text: deepgramAccumulator, confidence: event.confidence, speechFinal: event.speechFinal },
+              'ASR FINAL transcript (Deepgram)',
+            );
+
+            // Forward accumulated text as final to TurnTaking
+            this.turnTakingManager?.onTranscriptReceived(true, deepgramAccumulator);
+
+            // Reset accumulator on speech endpoint (utterance complete)
+            if (event.speechFinal) {
+              deepgramAccumulator = '';
+            }
+          });
+
+          this.deepgramClient.on('error', (error) => {
+            logger.error({ err: error, callId: this.callId }, 'Deepgram ASR error');
+
+            // Max reconnect attempts exhausted → switch to Whisper fallback
+            if (error.message.includes('failed to reconnect')) {
+              logger.warn({ callId: this.callId }, 'Deepgram max reconnects exhausted — switching to Whisper fallback');
+              this.useWhisperFallback = true;
+            }
+          });
+
+          logger.info({ callId: this.callId, language: asrLanguage }, 'Deepgram ASR client acquired (primary)');
+        } catch (err: unknown) {
+          logger.warn({ err, callId: this.callId }, 'Failed to acquire Deepgram client — using Whisper only');
+          this.useWhisperFallback = true;
+        }
+      } else {
+        // No pool provided — Whisper-only mode
+        this.useWhisperFallback = true;
+        logger.info({ callId: this.callId }, 'No Deepgram pool — using Whisper ASR only');
+      }
+
+      // 7b. Speech buffer flush helper (Whisper fallback path)
       const flushSpeechBuffer = () => {
         if (this.speechCaptureTimer) { clearTimeout(this.speechCaptureTimer); this.speechCaptureTimer = null; }
 
         const audio = this.speechBuffer?.stop();
         if (!audio || audio.length < 1600) return; // <50ms = noise, skip
 
+        // In Deepgram-primary mode, discard the captured audio.
+        // Deepgram handles ASR via its own streaming WebSocket.
+        if (!this.useWhisperFallback) return;
+
+        // Whisper fallback: send captured audio for transcription
         const turnId = this.activeTurnId;
 
         this.whisperClient?.transcribe(audio, asrLanguage)
@@ -265,7 +351,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
             logger.info(
               { callId: this.callId, text: trimmed, audioBytes: audio.length, durationMs: Math.round(audio.length / 32) },
-              'ASR FINAL transcript',
+              'ASR FINAL transcript (Whisper fallback)',
             );
 
             this.turnTakingManager?.onTranscriptReceived(true, trimmed);
@@ -275,7 +361,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
           });
       };
 
-      // VAD speechStart → begin capturing audio
+      // VAD speechStart → begin capturing audio (for Whisper fallback insurance)
       this.vadDetector.on('speechStart', () => {
         // Echo guard: don't start speech capture while bot is speaking or within
         // 800ms after bot stops. This prevents TTS acoustic echo from being
@@ -300,7 +386,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         }, 10000);
       });
 
-      // VAD speechEnd → send captured audio to Whisper for transcription
+      // VAD speechEnd → flush speech buffer (Whisper fallback or discard)
       this.vadDetector.on('speechEnd', flushSpeechBuffer);
 
       // 9. Persist call record to DB
@@ -344,7 +430,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       if (this.activeTurnId === greetingTurnId) {
         this.setBotNotSpeaking();
       }
-      this.turnTakingManager?.restartSilenceTimer();
+      this.turnTakingManager.restartSilenceTimer();
 
       logger.info(
         {
@@ -531,9 +617,11 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       // Feed to VAD for speech detection
       this.vadDetector?.processAudio(buffer);
 
-      // Feed audio to speech buffer (addChunk is a no-op when capture is not active).
-      // The echo guard in the speechStart handler prevents capture from starting
-      // while bot is speaking or during the 800ms echo tail after bot stops.
+      // Stream audio to Deepgram (always — echo handled at transcript level)
+      this.deepgramClient?.sendAudio(buffer);
+
+      // Feed audio to speech buffer (for Whisper fallback insurance).
+      // addChunk is a no-op when capture is not active.
       this.speechBuffer?.addChunk(buffer);
 
       // Mark that caller has recent audio activity
@@ -550,7 +638,8 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
           {
             callId: this.callId,
             bytesPerSec: Math.round(this.audioBytesSinceLog / intervalSec),
-            whisperActive: this.whisperClient !== null,
+            deepgramConnected: this.deepgramClient?.isConnected() ?? false,
+            whisperFallback: this.useWhisperFallback,
           },
           'Audio throughput check',
         );
@@ -1020,6 +1109,9 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         this.mediaSession.sendAudio(audio);
       },
     );
+    // Capture local reference — TypeScript tracks the assignment above as non-null,
+    // so use `pipeline` directly instead of `this.currentTTSPipeline?.` throughout this method.
+    const pipeline = this.currentTTSPipeline;
 
     // Mark bot as speaking
     this.isBotSpeaking = true;
@@ -1064,19 +1156,19 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
               jsonTTSState = 'in_value';
               const captured = match[1] ?? '';
               jsonTTSBuffer = '';
-              if (captured && this.activeTurnId === myProcessTurnId) this.currentTTSPipeline?.addTokens(captured);
+              if (captured && this.activeTurnId === myProcessTurnId) pipeline.addTokens(captured);
             }
           } else {
             if (jsonTTSEscaped) {
               const unescaped = ch === 'n' ? '\n' : ch === 't' ? '\t' : ch;
-              if (this.activeTurnId === myProcessTurnId) this.currentTTSPipeline?.addTokens(unescaped);
+              if (this.activeTurnId === myProcessTurnId) pipeline.addTokens(unescaped);
               jsonTTSEscaped = false;
             } else if (ch === '\\') {
               jsonTTSEscaped = true;
             } else if (ch === '"') {
               jsonTTSState = 'done';
             } else {
-              if (this.activeTurnId === myProcessTurnId) this.currentTTSPipeline?.addTokens(ch);
+              if (this.activeTurnId === myProcessTurnId) pipeline.addTokens(ch);
             }
           }
         }
@@ -1086,8 +1178,8 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
       // The generator returns the parsed LLMResponse when done
       llmResponse = result.value;
-      // 6. Flush remaining TTS buffer (pipeline may be null if barge-in fired)
-      if (this.activeTurnId === myProcessTurnId) await this.currentTTSPipeline?.flush();
+      // 6. Flush remaining TTS buffer
+      if (this.activeTurnId === myProcessTurnId) await pipeline.flush();
 
 
     } catch (error) {
@@ -1107,9 +1199,9 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         'LLM_TURN_FALLBACK',
       );
 
-      // Try to flush whatever we have (pipeline may already be null if barge-in destroyed it)
+      // Try to flush whatever we have
       try {
-        await this.currentTTSPipeline?.flush();
+        await pipeline.flush();
       } catch (flushErr) {
         logger.error({ err: flushErr, callId: this.callId }, 'TTS flush after LLM error also failed');
       }
@@ -1120,7 +1212,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       // If barge-in fired, the new turn owns these resources.
       if (this.activeTurnId === myProcessTurnId) {
         this.currentLLMAbortController = null;
-        this.currentTTSPipeline?.destroy();
+        pipeline.destroy();
         this.currentTTSPipeline = null;
         this.setBotNotSpeaking();
       }
@@ -1166,8 +1258,9 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       this.updateSessionFromResponse(llmResponse, transcript);
     }
 
-    // 8. Log LLM latency (session may be null if call stopped during streaming)
+    // 8. Log LLM latency (session may be null if stop() was called during an await above)
     const llmLatencyMs = Date.now() - llmStartTime;
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- stop() can null this.session during awaits
     if (this.session) {
       llmLatency.observe({ model, phase: this.session.phase }, llmLatencyMs);
     }
@@ -1189,11 +1282,13 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         text: botText,
         interestScore: llmResponse.interest_score,
         complexityScore: llmResponse.complexity_score,
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- stop() can null this.session during awaits
         llmMode: this.session?.llmMode ?? 'mini',
         latencyMs: llmLatencyMs,
         timestamp: new Date(),
       };
 
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- stop() can null this.memoryManager during awaits
       this.memoryManager?.addTurn(botTurn);
 
       await this.safeDbOperation('insertBotTurn', () =>
@@ -1280,6 +1375,16 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
   private cleanup(): void {
     // Unbind media session events
     this.unbindMediaSessionEvents();
+
+    // Release Deepgram client back to pool (or close if no pool)
+    if (this.deepgramClient) {
+      if (this.deepgramPool) {
+        this.deepgramPool.release(this.deepgramClient);
+      } else {
+        void this.deepgramClient.close();
+      }
+      this.deepgramClient = null;
+    }
 
     // Clean up Whisper ASR client and speech buffer
     if (this.speechCaptureTimer) { clearTimeout(this.speechCaptureTimer); this.speechCaptureTimer = null; }
