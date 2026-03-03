@@ -80,7 +80,16 @@ interest_score: 0.0 = odbija, 0.5 = neutralan, 1.0 = spreman za prijavu
 complexity_score: 0.0 = jednostavan, 1.0 = zahtijeva detaljan odgovor
 phase: trenutna faza razgovora
 
-VAZNO: Ako osoba jasno odbija dva puta zaredom, ljubazno se pozdravi: "Razumijem potpuno. Ako se situacija promijeni, tu smo. Prijatno!"`,
+VAZNO: Ako osoba jasno odbija dva puta zaredom, ljubazno se pozdravi: "Razumijem potpuno. Ako se situacija promijeni, tu smo. Prijatno!"
+
+!!! INTRO-REGEL !!!
+- Pozdrav iz FAZE 1 (HOOK) kazes SAMO JEDNOM — na samom pocetku razgovora.
+- NIKAD ne ponavljaj pozdrav. Ako osoba ne reaguje, pitaj: "Jeste li jos tu?" ili postavi pitanje iz FAZE 2.
+- Ako si vec rekao "Dobar dan, Goran ovdje..." i nemas odgovor — NE ponavljaj istu recenicu.
+
+!!! PROVJERA PRISUTNOSTI !!!
+- Za provjeru da li je osoba jos na liniji, koristi TACNO: "Jeste li jos tu?"
+- NIKAD ne izmisljaj nove izraze za provjeru prisutnosti.`,
   fillerLibrary: {
     acknowledge: ['Naravno...', 'Razumijem...', 'Da, da...', 'Jasno...', 'Sigurno...'],
     thinking: ['Dobro pitanje...', 'Hajde da vidimo...', 'Znaci...', 'E, da...', 'Aha...'],
@@ -92,5 +101,6 @@ VAZNO: Ako osoba jasno odbija dva puta zaredom, ljubazno se pozdravi: "Razumijem
     goodbye: 'Razumijem potpuno. Ako se situacija promijeni, tu smo. Prijatno!',
     still_there: 'Jeste li jos tu?',
     silence_followup: 'Sta mislite?',
+    bad_connection: 'Izgleda da imamo lose vezu. Javicu se ponovo. Prijatno!',
   },
 };

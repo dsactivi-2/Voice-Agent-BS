@@ -41,8 +41,9 @@ export function buildSSML(text: string, language: Language, voice: string): stri
   // voice reads it intelligibly. The <sub> element substitutes the spoken
   // text without affecting the displayed/logged text.
   const brandInjected = escaped
-    .replace(/Step2Job-a/gi, '<sub alias="Step Tu Džoba">Step2Job-a</sub>')
-    .replace(/Step2Job/gi, '<sub alias="Step Tu Džob">Step2Job</sub>');
+    .replace(/Step\s*2\s*Job-a/gi, '<sub alias="Step Tu Džoba">Step2Job-a</sub>')
+    .replace(/Step\s*2\s*Job-e/gi, '<sub alias="Step Tu Džobe">Step2Job-e</sub>')
+    .replace(/Step\s*2\s*Job/gi, '<sub alias="Step Tu Džob">Step2Job</sub>');
 
   // Wrap standalone integers (2+ digits) so Azure reads them as cardinal
   // numbers ("dvije hiljade osam stotina") rather than individual digits
