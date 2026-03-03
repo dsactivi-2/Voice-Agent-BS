@@ -248,7 +248,7 @@ function createMockAgentConfig(overrides: Partial<AgentConfig> = {}): AgentConfi
   return {
     language: 'bs-BA',
     telnyxPhoneNumber: '+38761000001',
-    deepgramLanguage: 'bs',
+    asrLanguage: 'bs',
     ttsVoice: 'bs-BA-GoranNeural',
     systemPrompt: 'You are a helpful sales agent.',
     fillerLibrary: {
@@ -547,101 +547,6 @@ describe('CallOrchestrator', () => {
     });
   });
 
-  describe('H2: ASR confidence filter', () => {
-    function getAsrClient(orchestrator: CallOrchestrator): EventEmitter {
-      return (orchestrator as unknown as { asrClient: EventEmitter }).asrClient;
-    }
-
-    function getTurnTakingManager(orchestrator: CallOrchestrator): { onTranscriptReceived: ReturnType<typeof vi.fn> } {
-      return (orchestrator as unknown as { turnTakingManager: { onTranscriptReceived: ReturnType<typeof vi.fn> } }).turnTakingManager;
-    }
-
-    it('passes high-confidence final transcript to TurnTakingManager', async () => {
-      const { orchestrator } = createOrchestrator();
-      await orchestrator.start();
-
-      const ttm = getTurnTakingManager(orchestrator);
-      const asr = getAsrClient(orchestrator);
-
-      asr.emit('transcript', { text: 'Zanima me posao u Njemackoj', isFinal: true, confidence: 0.92, speechFinal: true });
-
-      expect(ttm.onTranscriptReceived).toHaveBeenCalledWith(true, 'Zanima me posao u Njemackoj');
-    });
-
-    it('drops low-confidence final transcript (confidence < 0.5)', async () => {
-      const { orchestrator } = createOrchestrator();
-      await orchestrator.start();
-
-      const ttm = getTurnTakingManager(orchestrator);
-      const asr = getAsrClient(orchestrator);
-
-      // Live call f856f748 confidence: 0.24 → "Tlancomline" (confirmed garbage)
-      asr.emit('transcript', { text: 'Tlancomline', isFinal: true, confidence: 0.24, speechFinal: false });
-
-      expect(ttm.onTranscriptReceived).not.toHaveBeenCalled();
-    });
-
-    it('drops final transcript at exactly the threshold boundary (confidence = 0.299)', async () => {
-      const { orchestrator } = createOrchestrator();
-      await orchestrator.start();
-
-      const ttm = getTurnTakingManager(orchestrator);
-      const asr = getAsrClient(orchestrator);
-
-      asr.emit('transcript', { text: 'Hmm', isFinal: true, confidence: 0.299, speechFinal: false });
-
-      expect(ttm.onTranscriptReceived).not.toHaveBeenCalled();
-    });
-
-    it('accepts final transcript at exactly 0.3 confidence (threshold boundary)', async () => {
-      const { orchestrator } = createOrchestrator();
-      await orchestrator.start();
-
-      const ttm = getTurnTakingManager(orchestrator);
-      const asr = getAsrClient(orchestrator);
-
-      asr.emit('transcript', { text: 'Da zanima me', isFinal: true, confidence: 0.3, speechFinal: true });
-
-      expect(ttm.onTranscriptReceived).toHaveBeenCalledWith(true, 'Da zanima me');
-    });
-
-    it('drops low-confidence interim transcript (prevents garbage H1 fallback)', async () => {
-      const { orchestrator } = createOrchestrator();
-      await orchestrator.start();
-
-      const ttm = getTurnTakingManager(orchestrator);
-      const asr = getAsrClient(orchestrator);
-
-      asr.emit('transcript', { text: 'Tlancomline', isFinal: false, confidence: 0.29, speechFinal: false });
-
-      expect(ttm.onTranscriptReceived).not.toHaveBeenCalled();
-    });
-
-    it('passes interim transcript with confidence = 0 (Deepgram omits it on normal interims)', async () => {
-      const { orchestrator } = createOrchestrator();
-      await orchestrator.start();
-
-      const ttm = getTurnTakingManager(orchestrator);
-      const asr = getAsrClient(orchestrator);
-
-      // confidence=0 on interims is normal (Deepgram often omits it) — should pass through
-      asr.emit('transcript', { text: 'Ne mogu', isFinal: false, confidence: 0, speechFinal: false });
-
-      expect(ttm.onTranscriptReceived).toHaveBeenCalledWith(false, 'Ne mogu');
-    });
-
-    it('passes high-confidence interim transcript', async () => {
-      const { orchestrator } = createOrchestrator();
-      await orchestrator.start();
-
-      const ttm = getTurnTakingManager(orchestrator);
-      const asr = getAsrClient(orchestrator);
-
-      asr.emit('transcript', { text: 'Zanima me', isFinal: false, confidence: 0.85, speechFinal: false });
-
-      expect(ttm.onTranscriptReceived).toHaveBeenCalledWith(false, 'Zanima me');
-    });
-  });
 
   describe('H4: rejection detection', () => {
     function triggerTurnWithScore(orchestrator: CallOrchestrator, score: number): void {

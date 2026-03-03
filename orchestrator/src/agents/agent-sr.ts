@@ -4,7 +4,7 @@ import type { AgentConfig } from '../types.js';
 export const agentSR: AgentConfig = {
   language: 'sr-RS',
   telnyxPhoneNumber: config.TELNYX_PHONE_SR ?? '',
-  deepgramLanguage: 'sr',
+  asrLanguage: 'sr',
   ttsVoice: 'sr-RS-SophieNeural',
   systemPrompt: `Ti si Vesna, iskusna savetnica u firmi Step Tu Džob. Tvoj glas je topao i pouzdan — direktna si, bez uvijanja, iskljucivo na "Vi".
 

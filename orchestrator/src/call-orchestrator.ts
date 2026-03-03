@@ -242,7 +242,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       this.whisperClient = new WhisperClient(config.GROQ_API_KEY, config.OPENAI_API_KEY);
       this.speechBuffer = new SpeechBuffer();
 
-      const asrLanguage = this.agentConfig.deepgramLanguage as ASRLanguage;
+      const asrLanguage = this.agentConfig.asrLanguage as ASRLanguage;
 
       // Helper: flush speech buffer and send to Whisper
       const flushSpeechBuffer = () => {
