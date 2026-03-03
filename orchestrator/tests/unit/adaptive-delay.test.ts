@@ -82,4 +82,36 @@ describe('calculateAdaptiveDelay', () => {
     const delay = calculateAdaptiveDelay('Da', 99999);
     expect(delay).toBeGreaterThanOrEqual(0);
   });
+
+  describe('llmMode cap (mini + short transcript)', () => {
+    it('caps delay at 200ms for mini mode with short transcript', () => {
+      // Medium transcript (15 chars < 60), mini mode → effectiveMax = 200ms
+      // target = min(300, 200) = 200, actual = 0 → additional = 200
+      const delay = calculateAdaptiveDelay('Koliko to kosta', 0, 'mini');
+      expect(delay).toBe(200);
+    });
+
+    it('applies full delay for mini mode when transcript >= 60 chars', () => {
+      // Long-ish transcript (>= 60 chars) → effectiveMax = 800ms (no cap)
+      // But >= 30 chars → complex → always returns 0
+      const longText = 'Zanima me vise detalja o tome kako funkcionise vasa usluga i sta dobijam';
+      expect(longText.length).toBeGreaterThanOrEqual(60);
+      const delay = calculateAdaptiveDelay(longText, 0, 'mini');
+      expect(delay).toBe(0); // complex transcript always returns 0
+    });
+
+    it('does not cap delay for full mode with short transcript', () => {
+      // Same medium transcript, full mode → effectiveMax = 800ms (no cap)
+      // target = min(300, 800) = 300, actual = 0 → additional = 300
+      const delay = calculateAdaptiveDelay('Koliko to kosta', 0, 'full');
+      expect(delay).toBe(300);
+    });
+
+    it('does not cap delay when llmMode is undefined', () => {
+      // No llmMode → effectiveMax = 800ms
+      // target = min(300, 800) = 300, actual = 0 → additional = 300
+      const delay = calculateAdaptiveDelay('Koliko to kosta', 0);
+      expect(delay).toBe(300);
+    });
+  });
 });

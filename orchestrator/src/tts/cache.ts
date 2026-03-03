@@ -82,6 +82,15 @@ const STANDARD_PHRASES: Record<string, Record<Language, string>> = {
     'bs-BA': 'Sta mislite?',
     'sr-RS': 'Sta mislite?',
   },
+  // Bad connection — must match agent cachedPhrases.bad_connection
+  bad_connection_bs: {
+    'bs-BA': 'Izgleda da imamo lose vezu. Javicu se ponovo. Prijatno!',
+    'sr-RS': 'Izgleda da imamo lose vezu. Javicu se ponovo. Prijatno!',
+  },
+  bad_connection_sr: {
+    'bs-BA': 'Izgleda da imamo lose vezu. Javicu se ponovo. Prijatno!',
+    'sr-RS': 'Izgleda da imamo lose vezu. Javicu se ponovo. Prijatno!',
+  },
 };
 
 /**
