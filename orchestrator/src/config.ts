@@ -143,3 +143,6 @@ function loadConfig() {
 
 export type Config = z.infer<typeof envSchema>;
 export const config = loadConfig();
+
+// ASR Provider (deepgram oder whisper)
+export const ASR_PROVIDER = process.env['ASR_PROVIDER'] ?? 'deepgram';

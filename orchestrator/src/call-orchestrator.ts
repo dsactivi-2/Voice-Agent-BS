@@ -1,3 +1,4 @@
+import { ASR_PROVIDER } from './config.js';
 import { EventEmitter } from 'node:events';
 import { config } from './config.js';
 import { logger } from './utils/logger.js';
@@ -293,7 +294,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       const asrLanguage = this.agentConfig.asrLanguage as ASRLanguage;
 
       // 7a. Acquire Deepgram streaming connection from pool
-      if (this.deepgramPool) {
+      if (this.deepgramPool && ASR_PROVIDER !== "whisper") {
         try {
           const deepgramLang = asrLanguage as DeepgramLanguage;
           this.deepgramClient = await this.deepgramPool.acquire(deepgramLang);
@@ -1489,7 +1490,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
     // Release Deepgram client back to pool (or close if no pool)
     if (this.deepgramClient) {
-      if (this.deepgramPool) {
+      if (this.deepgramPool && ASR_PROVIDER !== "whisper") {
         this.deepgramPool.release(this.deepgramClient);
       } else {
         void this.deepgramClient.close();

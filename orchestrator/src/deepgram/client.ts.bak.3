@@ -326,19 +326,3 @@ export class DeepgramASRClient extends EventEmitter<DeepgramASRClientEvents> {
     }, delayMs);
   }
 }
-
-// DEBUG: Log alle Deepgram Alternativen
-export function logDeepgramVerbose(data: DeepgramResult): void {
-  const channel = data.channel;
-  if (!channel || !channel.alternatives) return;
-  
-  console.error('[DEEPGRAM_VERBOSE]', {
-    alternatives_count: channel.alternatives.length,
-    all_alternatives: channel.alternatives.map(alt => ({
-      transcript: alt.transcript?.substring(0, 100),
-      confidence: alt.confidence
-    })),
-    is_final: data.is_final,
-    speech_final: data.speech_final,
-  });
-}
