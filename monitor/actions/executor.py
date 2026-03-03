@@ -30,6 +30,10 @@ def execute_fix(alert: Alert, st: dict[str, Any], dry_run: bool = False) -> dict
     if alert.tier >= 3:
         return {"applied": False, "reason": "tier_3_alert_only", "verified": False}
 
+    # alert_only fix type = no auto-fix, just notify
+    if fix_type == "alert_only":
+        return {"applied": False, "reason": "alert_only", "verified": False}
+
     # Safety: rate limit check
     if not safety.can_fix(st):
         return {"applied": False, "reason": "fix_budget_exhausted", "verified": False}
