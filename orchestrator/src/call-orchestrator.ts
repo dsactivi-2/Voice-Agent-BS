@@ -1133,7 +1133,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     // Capture turn ID — if barge-in fires, activeTurnId increments and we stop feeding TTS.
     const myProcessTurnId = this.activeTurnId;
 
-    const model = this.session.llmMode === 'full'
+    const model = this.session?.llmMode === 'full'
       ? config.LLM_FULL_MODEL
       : config.LLM_MINI_MODEL;
 
@@ -1141,19 +1141,19 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       {
         callId: this.callId,
         turn: this.turnCounter,
-        llm_mode: this.session.llmMode,
+        llm_mode: this.session?.llmMode,
         model_name: model,
-        phase: this.session.phase,
-        interest_scores: this.session.interestScores.slice(-3),
-        complexity_score: this.session.complexityScore,
-        ab_group: this.session.abGroup,
+        phase: this.session?.phase,
+        interest_scores: this.session?.interestScores.slice(-3),
+        complexity_score: this.session?.complexityScore,
+        ab_group: this.session?.abGroup,
       },
       'LLM_TURN_START',
     );
 
     // 2. Calculate adaptive delay — subtract filler+processing latency already elapsed
     const actualLatencyMs = Date.now() - turnStartTime;
-    const adaptiveDelayMs = calculateAdaptiveDelay(transcript, actualLatencyMs, this.session.llmMode);
+    const adaptiveDelayMs = calculateAdaptiveDelay(transcript, actualLatencyMs, this.session?.llmMode ?? 'mini');
 
     // 3. Create a new TTS pipeline for this turn
     this.currentTTSPipeline = new ChunkedTTSPipeline(
