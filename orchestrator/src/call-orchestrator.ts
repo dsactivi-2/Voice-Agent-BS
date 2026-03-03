@@ -134,6 +134,8 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
   // ── Per-turn TTS pipeline ────────────────────────────────────────
   private currentTTSPipeline: ChunkedTTSPipeline | null = null;
   private isBotSpeaking: boolean = false;
+  /** Timestamp when bot stopped speaking — used for echo guard (800ms post-speech). */
+  private lastBotSpeakingEndTime: number = 0;
 
   // ── Counters and timing ──────────────────────────────────────────
   private turnCounter: number = 0;
@@ -275,10 +277,20 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
       // VAD speechStart → begin capturing audio
       this.vadDetector.on('speechStart', () => {
+        // Echo guard: don't start speech capture while bot is speaking or within
+        // 800ms after bot stops. This prevents TTS acoustic echo from being
+        // captured and sent to Whisper as if it were customer speech.
+        if (this.isBotSpeaking) {
+          logger.debug({ callId: this.callId }, 'Ignoring speechStart — bot is speaking');
+          return;
+        }
+        if (this.lastBotSpeakingEndTime > 0 && Date.now() - this.lastBotSpeakingEndTime < 800) {
+          logger.debug({ callId: this.callId, msSinceBotStopped: Date.now() - this.lastBotSpeakingEndTime }, 'Ignoring speechStart — echo guard');
+          return;
+        }
+
         this.speechBuffer?.startCapture();
-        // Safety timer: if speechEnd doesn't fire within 10s (e.g. audio stream gaps),
-        // force-flush whatever we have. In production Vonage sends continuous audio,
-        // but this protects against edge cases.
+        // Safety timer: if speechEnd doesn't fire within 10s, force-flush.
         if (this.speechCaptureTimer) clearTimeout(this.speechCaptureTimer);
         this.speechCaptureTimer = setTimeout(() => {
           if (this.speechBuffer?.isCapturing) {
@@ -318,6 +330,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
       // 10. Send initial greeting — 800ms pause simulates human pickup
       await new Promise(resolve => setTimeout(resolve, 800));
+      const greetingTurnId = this.activeTurnId;
       this.isBotSpeaking = true;
       this.turnTakingManager.setBotSpeaking(true);
       const greetingDurationMs = await this.sendGreeting();
@@ -326,9 +339,12 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       if (greetingDurationMs > 0) {
         await new Promise(resolve => setTimeout(resolve, greetingDurationMs + 300));
       }
-      this.isBotSpeaking = false;
-      this.turnTakingManager.setBotSpeaking(false);
-      this.turnTakingManager.restartSilenceTimer();
+      // Only transition if no barge-in happened during greeting.
+      // Barge-in increments activeTurnId and handles isBotSpeaking itself.
+      if (this.activeTurnId === greetingTurnId) {
+        this.setBotNotSpeaking();
+      }
+      this.turnTakingManager?.restartSilenceTimer();
 
       logger.info(
         {
@@ -515,9 +531,9 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       // Feed to VAD for speech detection
       this.vadDetector?.processAudio(buffer);
 
-      // Feed audio to speech buffer (always).
-      // Echo contamination during bot speaking is handled by the barge-in handler,
-      // which clears and restarts the buffer when the customer interrupts.
+      // Feed audio to speech buffer (addChunk is a no-op when capture is not active).
+      // The echo guard in the speechStart handler prevents capture from starting
+      // while bot is speaking or during the 800ms echo tail after bot stops.
       this.speechBuffer?.addChunk(buffer);
 
       // Mark that caller has recent audio activity
@@ -772,31 +788,37 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     // Release the processing guard so the next user turn is not dropped
     this.isProcessingTurn = false;
 
-    // Clear echo-contaminated audio and restart capture.
-    // Any audio captured while bot was speaking is likely echo from the greeting/response.
-    // By restarting capture here, we only keep the customer's actual speech post-barge-in.
-    if (this.speechBuffer?.isCapturing) {
-      this.speechBuffer.startCapture(); // clears old chunks + restarts
-      // Reset the safety timer
-      if (this.speechCaptureTimer) clearTimeout(this.speechCaptureTimer);
-      this.speechCaptureTimer = setTimeout(() => {
-        if (this.speechBuffer?.isCapturing) {
-          logger.warn({ callId: this.callId }, 'Speech capture timeout — forcing flush');
-          this.vadDetector?.emit('speechEnd', 0);
-        }
-      }, 10000);
-    }
-
-    // Cancel current TTS pipeline and clear isBotSpeaking only if pipeline was active.
-    // If no pipeline is running (e.g. barge-in during greeting echo), leave isBotSpeaking=true
-    // so the greeting duration timer handles the cleanup correctly.
+    // Cancel current TTS pipeline if active
     if (this.currentTTSPipeline) {
       this.currentTTSPipeline.destroy();
       this.currentTTSPipeline = null;
       this.mediaSession.clearAudioQueue();
-      this.isBotSpeaking = false;
-      this.turnTakingManager?.setBotSpeaking(false);
     }
+
+    // ALWAYS start/restart speech capture — the customer is actively speaking.
+    // This bypasses the echo guard in the speechStart handler, ensuring we
+    // capture the customer's speech even during greeting playback (from cache).
+    this.speechBuffer?.startCapture();
+    if (this.speechCaptureTimer) clearTimeout(this.speechCaptureTimer);
+    this.speechCaptureTimer = setTimeout(() => {
+      if (this.speechBuffer?.isCapturing) {
+        logger.warn({ callId: this.callId }, 'Speech capture timeout — forcing flush');
+        this.vadDetector?.emit('speechEnd', 0);
+      }
+    }, 10000);
+
+    // ALWAYS mark bot as not speaking — even during cached greeting (no pipeline).
+    // Skip echo guard (lastBotSpeakingEndTime=0) since customer is actively speaking.
+    this.isBotSpeaking = false;
+    this.lastBotSpeakingEndTime = 0;
+    this.turnTakingManager?.setBotSpeaking(false);
+  }
+
+  /** Transition bot from speaking → not speaking, recording timestamp for echo guard. */
+  private setBotNotSpeaking(): void {
+    this.isBotSpeaking = false;
+    this.lastBotSpeakingEndTime = Date.now();
+    this.turnTakingManager?.setBotSpeaking(false);
   }
 
   /**
@@ -1082,8 +1104,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         this.currentLLMAbortController = null;
         this.currentTTSPipeline?.destroy();
         this.currentTTSPipeline = null;
-        this.isBotSpeaking = false;
-        this.turnTakingManager?.setBotSpeaking(false);
+        this.setBotNotSpeaking();
       }
     }
 
@@ -1127,9 +1148,11 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       this.updateSessionFromResponse(llmResponse, transcript);
     }
 
-    // 8. Log LLM latency
+    // 8. Log LLM latency (session may be null if call stopped during streaming)
     const llmLatencyMs = Date.now() - llmStartTime;
-    llmLatency.observe({ model, phase: this.session.phase }, llmLatencyMs);
+    if (this.session) {
+      llmLatency.observe({ model, phase: this.session.phase }, llmLatencyMs);
+    }
 
 
     await this.safeDbOperation('insertLLMLatencyMetric', () =>
@@ -1148,12 +1171,12 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         text: botText,
         interestScore: llmResponse.interest_score,
         complexityScore: llmResponse.complexity_score,
-        llmMode: this.session.llmMode,
+        llmMode: this.session?.llmMode ?? 'mini',
         latencyMs: llmLatencyMs,
         timestamp: new Date(),
       };
 
-      this.memoryManager.addTurn(botTurn);
+      this.memoryManager?.addTurn(botTurn);
 
       await this.safeDbOperation('insertBotTurn', () =>
         insertTurn({
