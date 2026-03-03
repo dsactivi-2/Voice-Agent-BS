@@ -453,7 +453,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       // 10. Send initial greeting — 800ms pause simulates human pickup
       await new Promise(resolve => setTimeout(resolve, 800));
       const greetingTurnId = this.activeTurnId;
-      this.isBotSpeaking = true;
+      this.isBotSpeaking = true; this.vadDetector?.setBotSpeaking(true);
       this.turnTakingManager.setBotSpeaking(true);
       const greetingDurationMs = await this.sendGreeting();
       // Keep isBotSpeaking=true until Vonage finishes playing the greeting audio.
@@ -996,14 +996,14 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
     // ALWAYS mark bot as not speaking — even during cached greeting (no pipeline).
     // Skip echo guard (lastBotSpeakingEndTime=0) since customer is actively speaking.
-    this.isBotSpeaking = false;
+    this.isBotSpeaking = false; this.vadDetector?.setBotSpeaking(false);
     this.lastBotSpeakingEndTime = 0;
     this.turnTakingManager?.setBotSpeaking(false);
   }
 
   /** Transition bot from speaking → not speaking, recording timestamp for echo guard. */
   private setBotNotSpeaking(): void {
-    this.isBotSpeaking = false;
+    this.isBotSpeaking = false; this.vadDetector?.setBotSpeaking(false);
     this.lastBotSpeakingEndTime = Date.now();
     this.turnTakingManager?.setBotSpeaking(false);
   }
@@ -1084,7 +1084,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       // Activate echo guard during cached audio playback.
       // Without this, echo from silence-timeout prompts ("Jeste li jos tu?")
       // would be captured by SpeechBuffer and transcribed as customer speech.
-      this.isBotSpeaking = true;
+      this.isBotSpeaking = true; this.vadDetector?.setBotSpeaking(true);
       this.turnTakingManager?.setBotSpeaking(true);
 
       this.mediaSession.sendAudio(audio);
@@ -1216,7 +1216,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     const pipeline = this.currentTTSPipeline;
 
     // Mark bot as speaking
-    this.isBotSpeaking = true;
+    this.isBotSpeaking = true; this.vadDetector?.setBotSpeaking(true);
     this.turnTakingManager?.setBotSpeaking(true);
 
     let llmResponse: LLMResponse | null = null;
