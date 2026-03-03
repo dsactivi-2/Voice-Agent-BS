@@ -270,7 +270,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
             this.turnTakingManager?.onTranscriptReceived(true, trimmed);
           })
-          .catch((err) => {
+          .catch((err: unknown) => {
             logger.error({ err, callId: this.callId }, 'Whisper transcription failed');
           });
       };

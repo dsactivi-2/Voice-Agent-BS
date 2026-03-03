@@ -4,7 +4,7 @@ import { logger } from '../utils/logger.js';
 export type ASRLanguage = 'bs' | 'sr' | 'hr' | 'multi';
 
 interface TranscriptionResponse {
-  text: string;
+  text: string | null;
 }
 
 /**
@@ -107,7 +107,7 @@ export class WhisperClient {
     formData.append('response_format', 'json');
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timer = setTimeout(() => { controller.abort(); }, this.timeoutMs);
 
     try {
       const response = await fetch(url, {
