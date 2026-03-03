@@ -889,10 +889,28 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       }
 
       ttsCacheHits.inc();
+
+      // Activate echo guard during cached audio playback.
+      // Without this, echo from silence-timeout prompts ("Jeste li jos tu?")
+      // would be captured by SpeechBuffer and transcribed as customer speech.
+      this.isBotSpeaking = true;
+      this.turnTakingManager?.setBotSpeaking(true);
+
       this.mediaSession.sendAudio(audio);
 
+      // Estimate audio duration and clear isBotSpeaking after playback + buffer.
+      // 16kHz 16-bit mono = 32 bytes per ms.
+      const durationMs = Math.round(audio.byteLength / 32);
+      const turnId = this.activeTurnId;
+      setTimeout(() => {
+        // Only clear if no barge-in happened during playback
+        if (this.activeTurnId === turnId && this.isBotSpeaking) {
+          this.setBotNotSpeaking();
+        }
+      }, durationMs + 300);
+
       logger.debug(
-        { phraseKey, bytes: audio.byteLength, callId: this.callId },
+        { phraseKey, bytes: audio.byteLength, durationMs, callId: this.callId },
         'Cached audio played',
       );
     } catch (error) {
