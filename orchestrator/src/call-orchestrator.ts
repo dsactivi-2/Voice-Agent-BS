@@ -515,8 +515,12 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       // Feed to VAD for speech detection
       this.vadDetector?.processAudio(buffer);
 
-      // Feed audio to speech buffer (captured during speech segments)
-      this.speechBuffer?.addChunk(buffer);
+      // Feed audio to speech buffer only when bot is NOT speaking.
+      // When bot is speaking, the customer channel carries echo of the bot's TTS output.
+      // This echo would contaminate the speech buffer and get transcribed instead of the customer.
+      if (!this.isBotSpeaking) {
+        this.speechBuffer?.addChunk(buffer);
+      }
 
       // Mark that caller has recent audio activity
       if (this.session) {
@@ -769,6 +773,21 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
     // Release the processing guard so the next user turn is not dropped
     this.isProcessingTurn = false;
+
+    // Clear echo-contaminated audio and restart capture.
+    // Any audio captured while bot was speaking is likely echo from the greeting/response.
+    // By restarting capture here, we only keep the customer's actual speech post-barge-in.
+    if (this.speechBuffer?.isCapturing) {
+      this.speechBuffer.startCapture(); // clears old chunks + restarts
+      // Reset the safety timer
+      if (this.speechCaptureTimer) clearTimeout(this.speechCaptureTimer);
+      this.speechCaptureTimer = setTimeout(() => {
+        if (this.speechBuffer?.isCapturing) {
+          logger.warn({ callId: this.callId }, 'Speech capture timeout — forcing flush');
+          this.vadDetector?.emit('speechEnd', 0);
+        }
+      }, 10000);
+    }
 
     // Cancel current TTS pipeline and clear isBotSpeaking only if pipeline was active.
     // If no pipeline is running (e.g. barge-in during greeting echo), leave isBotSpeaking=true
