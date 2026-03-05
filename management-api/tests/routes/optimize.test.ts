@@ -44,7 +44,7 @@ const { query } = await import('../../src/db/pool.js');
 const { redis } = await import('../../src/utils/redis.js');
 const spawnMock = spawn as unknown as ReturnType<typeof vi.fn>;
 
-describe('POST /api/manage/optimize', () => {
+describe('POST /optimize', () => {
   beforeAll(() => {
     // Set required env vars
     process.env['DATABASE_URL'] = 'postgresql://test:test@localhost:5432/test';
@@ -69,7 +69,7 @@ describe('POST /api/manage/optimize', () => {
 
     const response = await app.inject({
       method: 'POST',
-      url: '/api/manage/optimize',
+      url: '/optimize',
       payload: {
         type: 'cache_warmup',
         agent: 'all',
@@ -101,7 +101,7 @@ describe('POST /api/manage/optimize', () => {
 
     const response = await app.inject({
       method: 'POST',
-      url: '/api/manage/optimize',
+      url: '/optimize',
       payload: {
         type: 'cleanup',
         dryRun: true,
@@ -160,7 +160,7 @@ describe('POST /api/manage/optimize', () => {
 
     const response = await app.inject({
       method: 'POST',
-      url: '/api/manage/optimize',
+      url: '/optimize',
       payload: {
         type: 'db_optimize',
       },
@@ -184,7 +184,7 @@ describe('POST /api/manage/optimize', () => {
 
     const response = await app.inject({
       method: 'POST',
-      url: '/api/manage/optimize',
+      url: '/optimize',
       payload: {
         type: 'restart',
         dryRun: true,
@@ -223,7 +223,7 @@ describe('POST /api/manage/optimize', () => {
 
     const response = await app.inject({
       method: 'POST',
-      url: '/api/manage/optimize',
+      url: '/optimize',
       payload: {
         type: 'restart',
         dryRun: false,
@@ -254,7 +254,7 @@ describe('POST /api/manage/optimize', () => {
 
     const response = await app.inject({
       method: 'POST',
-      url: '/api/manage/optimize',
+      url: '/optimize',
       payload: {
         type: 'restart',
       },
@@ -272,13 +272,13 @@ describe('POST /api/manage/optimize', () => {
     vi.mocked(query)
       .mockResolvedValueOnce({
         rows: [
-          { id: 1, name: 'system_prompt', version: 'v2.1.0' },
-          { id: 2, name: 'qualify_prompt', version: 'v2.1.0' },
+          { id: '1', name: 'system_prompt', version: 2 },
+          { id: '2', name: 'qualify_prompt', version: 2 },
         ],
         rowCount: 2,
       } as never)
       .mockResolvedValueOnce({
-        rows: [{ id: 3, name: 'system_prompt', version: 'v2.1.0' }],
+        rows: [{ id: '3', name: 'system_prompt', version: 2 }],
         rowCount: 1,
       } as never);
 
@@ -290,7 +290,7 @@ describe('POST /api/manage/optimize', () => {
 
     const response = await app.inject({
       method: 'POST',
-      url: '/api/manage/optimize',
+      url: '/optimize',
       payload: {
         type: 'update_prompts',
         agent: 'all',
@@ -301,7 +301,7 @@ describe('POST /api/manage/optimize', () => {
     const body = JSON.parse(response.body);
     expect(body.success).toBe(true);
     expect(body.details.promptsUpdated).toBe(3);
-    expect(body.details.version).toBe('v2.1.0');
+    expect(body.details.version).toBe('v2.0.0');
 
     await app.close();
   });
@@ -315,7 +315,7 @@ describe('POST /api/manage/optimize', () => {
 
     const response = await app.inject({
       method: 'POST',
-      url: '/api/manage/optimize',
+      url: '/optimize',
       payload: {
         type: 'invalid_type',
       },
@@ -341,7 +341,7 @@ describe('POST /api/manage/optimize', () => {
     // Test LOW risk (cache_warmup)
     let response = await app.inject({
       method: 'POST',
-      url: '/api/manage/optimize',
+      url: '/optimize',
       payload: { type: 'cache_warmup' },
     });
     expect(JSON.parse(response.body).riskLevel).toBe('LOW');
@@ -350,7 +350,7 @@ describe('POST /api/manage/optimize', () => {
     vi.mocked(query).mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 } as never);
     response = await app.inject({
       method: 'POST',
-      url: '/api/manage/optimize',
+      url: '/optimize',
       payload: { type: 'cleanup', dryRun: true },
     });
     expect(JSON.parse(response.body).riskLevel).toBe('MEDIUM');
@@ -358,7 +358,7 @@ describe('POST /api/manage/optimize', () => {
     // Test HIGH risk (restart)
     response = await app.inject({
       method: 'POST',
-      url: '/api/manage/optimize',
+      url: '/optimize',
       payload: { type: 'restart', dryRun: true },
     });
     expect(JSON.parse(response.body).riskLevel).toBe('HIGH');
