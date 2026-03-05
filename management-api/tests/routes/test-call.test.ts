@@ -61,7 +61,7 @@ describe('POST /api/test-call', () => {
   it('should execute test call successfully with default profile', async () => {
     // Mock database response
     vi.mocked(query).mockResolvedValueOnce({
-      rows: [{ id: 1, name: 'Goran', language: 'bs-BA', voice_preset: 'BS_default' }],
+      rows: [{ id: '7173ac81-d68e-40a1-852f-db2a413e4e79', name: 'Goran', language: 'bs-BA', tts_voice: 'bs-BA-GoranNeural' }],
       rowCount: 1,
     } as never);
 
@@ -128,10 +128,10 @@ describe('POST /api/test-call', () => {
     expect(body.success).toBe(true);
     expect(body.callId).toBe('call_123');
     expect(body.agentUsed).toEqual({
-      id: 1,
+      id: '7173ac81-d68e-40a1-852f-db2a413e4e79',
       name: 'Goran',
       language: 'bs-BA',
-      voicePreset: 'BS_default',
+      ttsVoice: 'bs-BA-GoranNeural',
     });
 
     await app.close();
@@ -155,7 +155,7 @@ describe('POST /api/test-call', () => {
       url: '/api/test-call',
       payload: {
         profile: 'interested',
-        agentId: 999,
+        agentId: '00000000-0000-4000-8000-000000000999',
       },
     });
 
@@ -191,7 +191,7 @@ describe('POST /api/test-call', () => {
   it('should handle Docker execution error', async () => {
     // Mock database response
     vi.mocked(query).mockResolvedValueOnce({
-      rows: [{ id: 1, name: 'Goran', language: 'bs-BA', voice_preset: 'BS_default' }],
+      rows: [{ id: '7173ac81-d68e-40a1-852f-db2a413e4e79', name: 'Goran', language: 'bs-BA', tts_voice: 'bs-BA-GoranNeural' }],
       rowCount: 1,
     } as never);
 

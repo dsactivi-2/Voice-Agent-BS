@@ -10,7 +10,7 @@ import { query } from '../db/pool.js';
 const testCallBodySchema = z.object({
   profile: z.enum(['interested', 'skeptical', 'busy', 'difficult']).default('interested'),
   phoneNumber: z.string().optional(),
-  agentId: z.coerce.number().int().positive().optional(),
+  agentId: z.string().uuid().optional(),
   maxDuration: z.coerce.number().int().positive().min(10).max(600).default(120),
 });
 
@@ -122,19 +122,19 @@ async function executeTestCall(
 // ─── DB Queries ───────────────────────────────────────────────────────────
 
 interface AgentRow {
-  id: number;
+  id: string;
   name: string;
   language: string;
-  voice_preset: string;
+  tts_voice: string;
 }
 
 /**
  * Fetch agent details by ID or default to first agent.
  */
-async function getAgent(agentId?: number): Promise<AgentRow | null> {
+async function getAgent(agentId?: string): Promise<AgentRow | null> {
   const sql = agentId
-    ? 'SELECT id, name, language, voice_preset FROM ai_agents WHERE id = $1 LIMIT 1'
-    : 'SELECT id, name, language, voice_preset FROM ai_agents ORDER BY id ASC LIMIT 1';
+    ? 'SELECT id, name, language, tts_voice FROM ai_agents WHERE id = $1 LIMIT 1'
+    : 'SELECT id, name, language, tts_voice FROM ai_agents ORDER BY id ASC LIMIT 1';
 
   const values = agentId ? [agentId] : [];
 
@@ -197,7 +197,7 @@ async function testCallHandler(
         id: agent.id,
         name: agent.name,
         language: agent.language,
-        voicePreset: agent.voice_preset,
+        ttsVoice: agent.tts_voice,
       },
     });
   } catch (err) {
