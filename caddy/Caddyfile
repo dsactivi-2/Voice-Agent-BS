@@ -40,6 +40,11 @@ voice.activi.io {
         respond 403
     }
 
+    # Test Call API — internal testing endpoint
+    handle /api/test-call {
+        reverse_proxy management-api:3001
+    }
+
     # Management API — all /api/manage/* routes
     # Strip the /api/manage prefix so management-api receives clean paths
     handle /api/manage/* {
