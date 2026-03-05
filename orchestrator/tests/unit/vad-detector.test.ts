@@ -60,13 +60,23 @@ describe('calculateRMS', () => {
 
 describe('VADDetector', () => {
   let detector: VADDetector;
+  let currentTime: number;
+
+  function advanceTime(ms: number): void {
+    currentTime += ms;
+    vi.advanceTimersByTime(ms);
+  }
 
   beforeEach(() => {
     vi.useFakeTimers();
+    currentTime = 1000000; // Start at arbitrary time
+    vi.stubGlobal('Date', { ...Date, now: () => currentTime });
   });
 
   afterEach(() => {
     detector?.destroy();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 
@@ -78,7 +88,7 @@ describe('VADDetector', () => {
     // Feed several silent chunks
     for (let i = 0; i < 20; i++) {
       detector.processAudio(createSilentChunk());
-      vi.advanceTimersByTime(10);
+      advanceTime(10);
     }
 
     expect(speechStartSpy).not.toHaveBeenCalled();
@@ -104,7 +114,7 @@ describe('VADDetector', () => {
     // Feed loud audio over 200ms (20 chunks at 10ms each)
     for (let i = 0; i < 20; i++) {
       detector.processAudio(createAudioChunk(0.5));
-      vi.advanceTimersByTime(10);
+      advanceTime(10);
     }
 
     expect(speechStartSpy).toHaveBeenCalledTimes(1);
@@ -121,12 +131,17 @@ describe('VADDetector', () => {
     // Feed loud audio for only 100ms (10 chunks at 10ms each)
     for (let i = 0; i < 10; i++) {
       detector.processAudio(createAudioChunk(0.5));
-      vi.advanceTimersByTime(10);
+      advanceTime(10);
     }
 
     // Then silence — should not have emitted speechStart
+    // Need multiple silent chunks to flush RMS history (median filter)
     detector.processAudio(createSilentChunk());
-    vi.advanceTimersByTime(10);
+    advanceTime(10);
+    detector.processAudio(createSilentChunk());
+    advanceTime(10);
+    detector.processAudio(createSilentChunk());
+    advanceTime(10);
 
     expect(speechStartSpy).not.toHaveBeenCalled();
     expect(detector.getState()).toBe('idle');
@@ -144,18 +159,22 @@ describe('VADDetector', () => {
     // Speak for 100ms to trigger speechStart
     for (let i = 0; i < 10; i++) {
       detector.processAudio(createAudioChunk(0.5));
-      vi.advanceTimersByTime(10);
+      advanceTime(10);
     }
 
     // Now go silent — enter grace period
     detector.processAudio(createSilentChunk());
-    vi.advanceTimersByTime(10);
+    advanceTime(10);
+    detector.processAudio(createSilentChunk());
+    advanceTime(10);
+    detector.processAudio(createSilentChunk());
+    advanceTime(10);
 
     // speechEnd should not fire yet (grace period is 100ms)
     expect(speechEndSpy).not.toHaveBeenCalled();
 
     // Advance past grace period
-    vi.advanceTimersByTime(100);
+    advanceTime(100);
 
     expect(speechEndSpy).toHaveBeenCalledTimes(1);
     expect(speechEndSpy).toHaveBeenCalledWith(expect.any(Number));
@@ -173,19 +192,19 @@ describe('VADDetector', () => {
     // Speak to trigger speechStart
     for (let i = 0; i < 10; i++) {
       detector.processAudio(createAudioChunk(0.5));
-      vi.advanceTimersByTime(10);
+      advanceTime(10);
     }
 
     // Brief silence (50ms — within grace period)
     detector.processAudio(createSilentChunk());
-    vi.advanceTimersByTime(50);
+    advanceTime(50);
 
     // Resume speech
     detector.processAudio(createAudioChunk(0.5));
-    vi.advanceTimersByTime(10);
+    advanceTime(10);
 
     // Wait well past the original grace period
-    vi.advanceTimersByTime(300);
+    advanceTime(300);
 
     // speechEnd should not have fired (speech resumed)
     expect(speechEndSpy).not.toHaveBeenCalled();
@@ -201,7 +220,7 @@ describe('VADDetector', () => {
     // Start speaking
     for (let i = 0; i < 10; i++) {
       detector.processAudio(createAudioChunk(0.5));
-      vi.advanceTimersByTime(10);
+      advanceTime(10);
     }
     expect(detector.getState()).toBe('speaking');
 
@@ -212,7 +231,7 @@ describe('VADDetector', () => {
     // Should not emit speechEnd after reset
     const speechEndSpy = vi.fn();
     detector.on('speechEnd', speechEndSpy);
-    vi.advanceTimersByTime(500);
+    advanceTime(500);
     expect(speechEndSpy).not.toHaveBeenCalled();
   });
 
@@ -226,7 +245,7 @@ describe('VADDetector', () => {
     // Process audio after destruction — should be ignored
     for (let i = 0; i < 20; i++) {
       detector.processAudio(createAudioChunk(0.5));
-      vi.advanceTimersByTime(10);
+      advanceTime(10);
     }
 
     expect(speechStartSpy).not.toHaveBeenCalled();
@@ -249,18 +268,22 @@ describe('VADDetector', () => {
     // Start speaking
     for (let i = 0; i < 5; i++) {
       detector.processAudio(createAudioChunk(0.5));
-      vi.advanceTimersByTime(10);
+      advanceTime(10);
     }
     expect(detector.getState()).toBe('speaking');
     expect(speechStartSpy).toHaveBeenCalledTimes(1);
 
     // Go silent — enters grace period
     detector.processAudio(createSilentChunk());
-    vi.advanceTimersByTime(10);
+    detector.processAudio(createSilentChunk());
+    advanceTime(10);
+    detector.processAudio(createSilentChunk());
+    advanceTime(10);
+    advanceTime(10);
     expect(detector.getState()).toBe('grace_period');
 
     // Grace period expires
-    vi.advanceTimersByTime(50);
+    advanceTime(50);
     expect(detector.getState()).toBe('idle');
     expect(speechEndSpy).toHaveBeenCalledTimes(1);
   });
