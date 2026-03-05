@@ -288,8 +288,8 @@ async function updatePrompts(agent: string, dryRun: boolean): Promise<Record<str
 
   try {
     for (const lang of languages) {
-      const result = await query<{ id: number; name: string; version: string }>(
-        'SELECT id, name, version FROM prompts WHERE language = $1 AND active = true',
+      const result = await query<{ id: string; name: string; version: number }>(
+        'SELECT id, name, version FROM prompts WHERE language = $1 AND is_active = true',
         [lang],
       );
 
@@ -304,7 +304,7 @@ async function updatePrompts(agent: string, dryRun: boolean): Promise<Record<str
 
       // Use latest version if available
       if (result.rows.length > 0 && result.rows[0]?.version) {
-        version = result.rows[0].version;
+        version = `v${result.rows[0].version}.0.0`;
       }
     }
   } catch (err) {
