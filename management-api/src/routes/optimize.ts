@@ -424,7 +424,7 @@ async function optimizeHandler(
 
 export async function optimizeRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post<{ Body: OptimizeBody }>(
-    '/api/manage/optimize',
+    '/optimize',
     {
       preHandler: authenticate,
     },
