@@ -70,6 +70,12 @@ async function main(): Promise<void> {
   const { eventRoutes } = await import('./routes/events.js');
   await fastify.register(eventRoutes);
 
+  const { testCallRoutes } = await import('./routes/test-call.js');
+  await fastify.register(testCallRoutes);
+
+  const { optimizeRoutes } = await import('./routes/optimize.js');
+  await fastify.register(optimizeRoutes);
+
   // ── Global error handler ──────────────────────────────────────────────────
 
   fastify.setErrorHandler((err, _request, reply) => {
