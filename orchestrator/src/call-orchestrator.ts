@@ -80,6 +80,29 @@ import {
 } from './metrics/prometheus.js';
 
 // ---------------------------------------------------------------------------
+// Goodbye phrase detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Goodbye phrases in Bosnian and Serbian that indicate end of conversation.
+ * If bot or user says these, the call should end as SUCCESS, not timeout.
+ */
+const GOODBYE_PATTERNS = [
+  /\bhvala\b/i,          // Hvala (Thanks)
+  /\bhvala vam\b/i,      // Hvala vam (Thank you)
+  /\bprijatno\b/i,       // Prijatno (Have a nice day)
+  /\bdoviđenja\b/i,      // Doviđenja (Goodbye)
+  /\bzbogom\b/i,         // Zbogom (Bye)
+  /\bćao\b/i,            // Ćao (Ciao)
+  /\bto je to\b/i,       // To je to (That's it)
+  /\bdo viđenja\b/i      // Do viđenja (alternate spelling)
+];
+
+function isGoodbyePhrase(text: string): boolean {
+  return GOODBYE_PATTERNS.some(pattern => pattern.test(text));
+}
+
+// ---------------------------------------------------------------------------
 // Events emitted by the orchestrator for external observability
 // ---------------------------------------------------------------------------
 
@@ -169,6 +192,10 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
   // ── Clarification loop guard ──────────────────────────────────────
   private clarificationCount: number = 0;
   private readonly MAX_CLARIFICATIONS: number = 2;
+
+  // ── Goodbye detection ─────────────────────────────────────────────
+  /** Flag set when bot says goodbye — next silence timeout should be SUCCESS */
+  private expectingGoodbye = false;
 
   constructor(params: CallOrchestratorParams) {
     super();
@@ -826,6 +853,16 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
         'Processing user turn',
       );
 
+      // Check if user said goodbye → end call immediately as SUCCESS
+      if (isGoodbyePhrase(trimmedTranscript)) {
+        logger.info(
+          { callId: this.callId, userText: trimmedTranscript },
+          'User said goodbye — ending call as SUCCESS'
+        );
+        await this.stop('success');
+        return;
+      }
+
       // Log user turn to memory manager
       const userTurn: Turn = {
         callId: this.callId,
@@ -981,13 +1018,17 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       await this.playAudioFromCache(`still_there_${suffix}`);
     } else {
       // End the call
-      logger.info({ callId: this.callId }, 'Silence timeout (end) — hanging up');
+      const finalResult = this.expectingGoodbye ? 'success' : 'timeout';
+      logger.info(
+        { callId: this.callId, result: finalResult, expectingGoodbye: this.expectingGoodbye },
+        'Silence timeout (end) — hanging up'
+      );
 
       // Try to play goodbye before hanging up
       const suffix = this.agentConfig.language === 'bs-BA' ? 'bs' : 'sr';
       await this.playAudioFromCache(`goodbye_${suffix}`);
 
-      await this.stop('timeout');
+      await this.stop(finalResult);
     }
   }
 
@@ -1311,6 +1352,15 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       }
 
       this.updateSessionFromResponse(llmResponse, transcript);
+
+      // Check if bot said goodbye → set flag for graceful close
+      if (isGoodbyePhrase(llmResponse.reply_text)) {
+        logger.info(
+          { callId: this.callId, botReply: llmResponse.reply_text },
+          'Bot said goodbye — next silence will end as SUCCESS'
+        );
+        this.expectingGoodbye = true;
+      }
     }
 
     // 8. Log LLM latency (session may be null if stop() was called during an await above)
