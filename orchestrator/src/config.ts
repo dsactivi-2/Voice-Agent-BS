@@ -50,7 +50,7 @@ const envSchema = z.object({
   LLM_MINI_MODEL: z.string().default('gpt-4o-mini'),
   LLM_FULL_MODEL: z.string().default('gpt-4o'),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
-  LLM_SWITCH_INTEREST_THRESHOLD: z.coerce.number().min(0).max(1).default(0.72),
+  LLM_SWITCH_INTEREST_THRESHOLD: z.coerce.number().min(0).max(1).default(0.6),
   LLM_SWITCH_COMPLEXITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.60),
 
   // VAD
@@ -63,7 +63,7 @@ const envSchema = z.object({
   TTS_VOICE_BS: z.string().default('bs-BA-GoranNeural'),
   TTS_VOICE_SR: z.string().default('sr-RS-SophieNeural'),
   TTS_FORMAT: z.string().default('raw-16khz-16bit-mono-pcm'),
-  TTS_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86400),
+  TTS_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(604800),
 
   // Adaptive Delay
   ADAPTIVE_DELAY_MIN_MS: z.coerce.number().int().nonnegative().default(200),

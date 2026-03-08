@@ -91,6 +91,48 @@ const STANDARD_PHRASES: Record<string, Record<Language, string>> = {
     'bs-BA': 'Izgleda da imamo lose vezu. Javicu se ponovo. Prijatno!',
     'sr-RS': 'Izgleda da imamo lose vezu. Javicu se ponovo. Prijatno!',
   },
+  // Additional filler phrases for BS agent
+  filler_naravno_bs: {
+    "bs-BA": "Naravno...",
+    "sr-RS": "Naravno...",
+  },
+  filler_dada_bs: {
+    "bs-BA": "Da, da...",
+    "sr-RS": "Da, da...",
+  },
+  filler_jasno_bs: {
+    "bs-BA": "Jasno...",
+    "sr-RS": "Jasno...",
+  },
+  filler_dobropitanje_bs: {
+    "bs-BA": "Dobro pitanje...",
+    "sr-RS": "Dobro pitanje...",
+  },
+  filler_znaci_bs: {
+    "bs-BA": "Znaci...",
+    "sr-RS": "Znaci...",
+  },
+  filler_upravo_bs: {
+    "bs-BA": "Upravo tako...",
+    "sr-RS": "Upravo tako...",
+  },
+  // Additional filler phrases for SR agent
+  filler_naravno_sr: {
+    "bs-BA": "Naravno...",
+    "sr-RS": "Naravno...",
+  },
+  filler_jasno_sr: {
+    "bs-BA": "Jasno...",
+    "sr-RS": "Jasno...",
+  },
+  filler_dobropitanje_sr: {
+    "bs-BA": "Dobro pitanje...",
+    "sr-RS": "Dobro pitanje...",
+  },
+  filler_znaci_sr: {
+    "bs-BA": "Znaci...",
+    "sr-RS": "Znaci...",
+  },
 };
 
 /**

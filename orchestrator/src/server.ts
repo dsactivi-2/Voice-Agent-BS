@@ -5,7 +5,7 @@ import { pinoHttp } from 'pino-http';
 import { logger } from './utils/logger.js';
 import { config } from './config.js';
 import { registerHealthRoute } from './health.js';
-import { registerMetricsRoute } from './metrics/prometheus.js';
+import { registerMetricsRoute, callDropsTotal } from './metrics/prometheus.js';
 import { setupGracefulShutdown } from './graceful-shutdown.js';
 import { createTelephonyProvider } from './telephony/factory.js';
 import type { TelephonyEvents } from './telephony/provider.js';
@@ -150,7 +150,12 @@ export async function createServer(deps: ServerDependencies) {
         activeOrchestrators.delete(callId);
         const validResults = new Set<string>(['success', 'no_answer', 'rejected', 'error', 'timeout']);
         const callResult: CallResult = validResults.has(reason) ? (reason as CallResult) : 'success';
+        const language = orchestrator.language;
         orchestrator.stop(callResult).catch((err: unknown) => {
+        // Track call drops for error and timeout
+        if (callResult === "error" || callResult === "timeout") {
+          callDropsTotal.inc({ language, reason: callResult });
+        }
           logger.error({ err, callId }, 'Error stopping orchestrator on call end');
         });
       }
@@ -167,7 +172,10 @@ export async function createServer(deps: ServerDependencies) {
       const orchestrator = activeOrchestrators.get(callId);
       if (orchestrator) {
         activeOrchestrators.delete(callId);
+        const language = orchestrator.language;
         orchestrator.stop('error').catch((err: unknown) => {
+        // Track telephony error as call drop
+        callDropsTotal.inc({ language, reason: "error" });
           logger.error({ err, callId }, 'Error stopping orchestrator on telephony error');
         });
       }

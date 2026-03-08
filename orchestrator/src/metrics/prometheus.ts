@@ -29,6 +29,14 @@ export const callsTotal = new Counter({
   registers: [register],
 });
 
+export const callDropsTotal = new Counter({
+  name: "voice_call_drops_total",
+  help: "Total number of dropped calls",
+  labelNames: ["language", "reason"] as const,
+  registers: [register],
+});
+
+
 export const callDuration = new Histogram({
   name: 'voice_call_duration_seconds',
   help: 'Call duration in seconds',

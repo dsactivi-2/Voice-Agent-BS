@@ -23,21 +23,28 @@ async function main(): Promise<void> {
     logger.warn({ err }, 'TTS cache warm-up failed — calls will cold-synthesize');
   });
 
-  // Pre-warm Deepgram connection pool (primary ASR — nova-3 streaming)
-  const { DeepgramConnectionPool } = await import('./deepgram/connection-pool.js');
-  const deepgramPool = new DeepgramConnectionPool(5, config.DEEPGRAM_API_KEY, 20);
+  // Deepgram ASR (conditional on USE_WHISPER_ONLY)
+  let deepgramPool = undefined;
+  const useWhisperOnly = process.env['USE_WHISPER_ONLY'] === 'true';
 
-  try {
-    await Promise.all([
-      deepgramPool.warmUp('bs', 2),
-      deepgramPool.warmUp('sr', 1),
-    ]);
-    logger.info('Deepgram connection pool pre-warmed (2x BS + 1x SR)');
-  } catch (err: unknown) {
-    logger.warn({ err }, 'Deepgram pool warm-up failed — connections will be created on-demand');
+  if (!useWhisperOnly) {
+    // Pre-warm Deepgram connection pool (primary ASR — nova-3 streaming)
+    const { DeepgramConnectionPool } = await import('./deepgram/connection-pool.js');
+    deepgramPool = new DeepgramConnectionPool(5, config.DEEPGRAM_API_KEY, 20);
+
+    try {
+      await Promise.all([
+        deepgramPool.warmUp('bs', 2),
+        deepgramPool.warmUp('sr', 1),
+      ]);
+      logger.info('Deepgram connection pool pre-warmed (2x BS + 1x SR)');
+    } catch (err: unknown) {
+      logger.warn({ err }, 'Deepgram pool warm-up failed — connections will be created on-demand');
+    }
+    logger.info('ASR: Deepgram nova-3 (primary) + Whisper REST (fallback)');
+  } else {
+    logger.info('ASR: Whisper REST ONLY (Deepgram disabled via USE_WHISPER_ONLY)');
   }
-
-  logger.info('ASR: Deepgram nova-3 (primary) + Whisper REST (fallback)');
 
   // Start server
   const { startServer } = await import('./server.js');

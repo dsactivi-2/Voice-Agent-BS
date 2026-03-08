@@ -1,0 +1,43 @@
+groups:
+  - name: voice_system_alerts
+    interval: 30s
+    rules:
+      - alert: HighCallDropRate
+        expr: |
+          (
+            rate(voice_call_drops_total[5m])
+            /
+            rate(voice_calls_total[5m])
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: voice-system
+        annotations:
+          summary: 'High call drop rate detected'
+          description: 'Call drop rate for {{ $labels.language }} is {{ $value | humanizePercentage }} (threshold: 5%)'
+      
+      - alert: CriticalCallDropRate
+        expr: |
+          (
+            rate(voice_call_drops_total[5m])
+            /
+            rate(voice_calls_total[5m])
+          ) > 0.15
+        for: 2m
+        labels:
+          severity: critical
+          service: voice-system
+        annotations:
+          summary: 'CRITICAL: Very high call drop rate'
+          description: 'Call drop rate for {{ $labels.language }} is {{ $value | humanizePercentage }} (threshold: 15%)'
+      
+      - alert: HighCallDropCount
+        expr: rate(voice_call_drops_total[5m]) > 2
+        for: 5m
+        labels:
+          severity: warning
+          service: voice-system
+        annotations:
+          summary: 'High rate of call drops'
+          description: '{{ $labels.language }} calls dropping at {{ $value | humanize }}/sec due to {{ $labels.reason }}'

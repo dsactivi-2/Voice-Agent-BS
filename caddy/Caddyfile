@@ -47,6 +47,11 @@ voice.activi.io {
         reverse_proxy management-api:3001
     }
 
+    # RAG TEST (exact match)
+    handle /api/rag-test {
+        reverse_proxy rag-system:8000
+    }
+
     # Management UI — React app (placeholder until UI service is built)
     handle /app* {
         reverse_proxy management-api:3001

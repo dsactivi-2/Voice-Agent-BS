@@ -46,6 +46,7 @@ export async function* streamLLMResponse(
         model: params.model,
         messages: params.messages,
         max_tokens: params.maxTokens,
+        temperature: 0.7,
         response_format: { type: 'json_object' },
         stream: true,
       },
@@ -96,7 +97,7 @@ export async function getLLMResponseWithFallback(
     const generator = streamLLMResponse({
       model,
       messages,
-      maxTokens: 300,
+      maxTokens: 100,
     });
 
     let result = await generator.next();
