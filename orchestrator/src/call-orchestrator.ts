@@ -18,6 +18,7 @@ import type { MediaSession } from './telephony/provider.js';
 
 // Deepgram ASR (primary — nova-3 streaming)
 import { DeepgramASRClient } from './deepgram/client.js';
+import type { Language } from './types.js';
 import type { DeepgramLanguage } from './deepgram/client.js';
 import type { DeepgramConnectionPool } from './deepgram/connection-pool.js';
 
@@ -156,6 +157,11 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
   private vadDetector: VADDetector | null = null;
   private turnTakingManager: TurnTakingManager | null = null;
   private ringBuffer: RingBuffer | null = null;
+
+  // ── Public accessors ───────────────────────────────────────────
+  get language(): Language {
+    return this.agentConfig.language;
+  }
 
   // Deepgram ASR (primary)
   private readonly deepgramPool: DeepgramConnectionPool | null = null;

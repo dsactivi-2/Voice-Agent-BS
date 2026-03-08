@@ -41,11 +41,11 @@ export class WhisperClient {
   private readonly openaiApiKey: string;
   private readonly timeoutMs: number;
 
-  constructor(groqApiKey: string, openaiApiKey: string, timeoutMs = 5000) {
+  constructor(groqApiKey: string, openaiApiKey: string, timeoutMs = 3000) {
     this.groqApiKey = groqApiKey;
     this.openaiApiKey = openaiApiKey;
     this.timeoutMs = timeoutMs;
-    logger.info('WhisperClient created (Groq primary, OpenAI fallback)');
+    logger.info('WhisperClient created (Groq primary, OpenAI fallback, optimized timeout)');
   }
 
   async transcribe(pcmAudio: Buffer, language: ASRLanguage): Promise<string> {
@@ -105,6 +105,8 @@ export class WhisperClient {
     formData.append('model', model);
     formData.append('language', language === 'multi' ? 'bs' : language);
     formData.append('response_format', 'json');
+    formData.append('temperature', '0');
+    formData.append('prompt', 'Step Tu Džob-a, Mozes li ponoviti');
 
     const controller = new AbortController();
     const timer = setTimeout(() => { controller.abort(); }, this.timeoutMs);
