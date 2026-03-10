@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
+import { AdaptiveVADFilter } from './adaptive-filter.js';
 
 type VADState = 'idle' | 'speaking' | 'grace_period';
 
@@ -51,6 +52,8 @@ function calculateRMS(buffer: Buffer): number {
  *  - 'speechStart' when confirmed speech begins (survived min duration filter)
  *  - 'speechEnd'   when speech truly ends after the grace period
  *  - 'silence'     on each silent chunk while idle
+ *
+ * NEW: Integrated with AdaptiveVADFilter for codec-aware, bot-aware speech detection.
  */
 export class VADDetector extends EventEmitter<VADDetectorEvents> {
   private readonly energyThreshold: number;
@@ -74,6 +77,10 @@ export class VADDetector extends EventEmitter<VADDetectorEvents> {
 
   private destroyed: boolean = false;
 
+  // NEW: Adaptive filter for codec-aware, bot-aware VAD
+  private readonly adaptiveFilter: AdaptiveVADFilter;
+  private botSpeakingFlag: boolean = false;
+
   constructor(options: VADDetectorOptions = {}) {
     super();
 
@@ -82,6 +89,9 @@ export class VADDetector extends EventEmitter<VADDetectorEvents> {
     this.gracePeriodMs = options.gracePeriodMs ?? config.VAD_GRACE_MS;
     this.sampleRate = options.sampleRate ?? 16000;
 
+    // NEW: Initialize adaptive filter
+    this.adaptiveFilter = new AdaptiveVADFilter();
+
     logger.debug(
       {
         energyThreshold: this.energyThreshold,
@@ -89,19 +99,36 @@ export class VADDetector extends EventEmitter<VADDetectorEvents> {
         gracePeriodMs: this.gracePeriodMs,
         sampleRate: this.sampleRate,
       },
-      'VADDetector initialised',
+      'VADDetector initialised with AdaptiveVADFilter',
     );
   }
 
   /**
    * Feed a PCM 16-bit LE audio chunk into the detector.
    * This is the main entry point called on every audio frame from the ring buffer.
+   * 
+   * NEW: Uses AdaptiveVADFilter for codec-aware threshold adaptation.
    */
   processAudio(chunk: Buffer): void {
     if (this.destroyed) return;
 
-    const rms = calculateRMS(chunk);
-    const isSpeech = rms >= this.energyThreshold;
+    // NEW: Analyze with adaptive filter
+    const analysis = this.adaptiveFilter.processAudioFrame(chunk);
+    const isSpeech = analysis.isSpeech;
+
+    // Log codec quality when detected
+    if (analysis.codecQuality !== 'unknown') {
+      logger.debug(
+        {
+          codecQuality: analysis.codecQuality,
+          rms: Number(analysis.rms.toFixed(3)),
+          threshold: Number(analysis.threshold.toFixed(3)),
+          botSpeaking: this.botSpeakingFlag,
+        },
+        'VAD: audio analysis',
+      );
+    }
+
     const now = Date.now();
 
     switch (this.state) {
@@ -120,6 +147,18 @@ export class VADDetector extends EventEmitter<VADDetectorEvents> {
   }
 
   /**
+   * NEW: Signal to the VAD that bot is actively speaking.
+   * This prevents false positives on echo during TTS.
+   */
+  setBotSpeaking(isActive: boolean): void {
+    if (this.botSpeakingFlag !== isActive) {
+      this.botSpeakingFlag = isActive;
+      this.adaptiveFilter.setBotSpeaking(isActive);
+      logger.debug({ botSpeaking: isActive }, 'VAD: bot speech flag changed');
+    }
+  }
+
+  /**
    * Resets the detector to its initial idle state, clearing all timers.
    */
   reset(): void {
@@ -128,6 +167,8 @@ export class VADDetector extends EventEmitter<VADDetectorEvents> {
     this.speechStartTimestamp = 0;
     this.confirmedSpeechStartTimestamp = 0;
     this.speechStartEmitted = false;
+    this.botSpeakingFlag = false;
+    this.adaptiveFilter.reset();
 
     logger.debug('VADDetector reset');
   }

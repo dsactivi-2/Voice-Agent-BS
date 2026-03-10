@@ -1,3 +1,5 @@
+import { detectEmotions, generateResponseStrategy, EmotionScores } from './emotion/detector.js';
+import { ASR_PROVIDER } from './config.js';
 import { EventEmitter } from 'node:events';
 import { config } from './config.js';
 import { logger } from './utils/logger.js';
@@ -197,6 +199,8 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
   // ── Clarification loop guard ──────────────────────────────────────
   private clarificationCount: number = 0;
+  private emotionalState: EmotionScores | null = null;
+  private previousTranscripts: string[] = [];
   private readonly MAX_CLARIFICATIONS: number = 2;
 
   // ── Goodbye detection ─────────────────────────────────────────────
@@ -293,7 +297,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       const asrLanguage = this.agentConfig.asrLanguage as ASRLanguage;
 
       // 7a. Acquire Deepgram streaming connection from pool
-      if (this.deepgramPool) {
+      if (this.deepgramPool && ASR_PROVIDER !== "whisper") {
         try {
           const deepgramLang = asrLanguage as DeepgramLanguage;
           this.deepgramClient = await this.deepgramPool.acquire(deepgramLang);
@@ -384,6 +388,20 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
             const trimmed = text.trim();
             if (trimmed.length === 0) return;
+    
+    // Analyse Emotionen des Anrufers
+    this.emotionalState = detectEmotions(trimmed, this.previousTranscripts);
+    this.previousTranscripts.push(trimmed);
+    if (this.previousTranscripts.length > 10) this.previousTranscripts.shift();
+    
+    logger.info({
+      callId: this.callId,
+      frustration: this.emotionalState.frustration.toFixed(2),
+      interest: this.emotionalState.interest.toFixed(2),
+      fatigue: this.emotionalState.fatigue.toFixed(2),
+      engagement: this.emotionalState.engagement.toFixed(2),
+    }, "Emotion Analysis");
+
 
             logger.info(
               { callId: this.callId, text: trimmed, audioBytes: audio.length, durationMs: Math.round(audio.length / 32) },
@@ -453,7 +471,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       // 10. Send initial greeting — 800ms pause simulates human pickup
       await new Promise(resolve => setTimeout(resolve, 800));
       const greetingTurnId = this.activeTurnId;
-      this.isBotSpeaking = true;
+      this.isBotSpeaking = true; this.vadDetector?.setBotSpeaking(true);
       this.turnTakingManager.setBotSpeaking(true);
       const greetingDurationMs = await this.sendGreeting();
       // Keep isBotSpeaking=true until Vonage finishes playing the greeting audio.
@@ -996,14 +1014,14 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
     // ALWAYS mark bot as not speaking — even during cached greeting (no pipeline).
     // Skip echo guard (lastBotSpeakingEndTime=0) since customer is actively speaking.
-    this.isBotSpeaking = false;
+    this.isBotSpeaking = false; this.vadDetector?.setBotSpeaking(false);
     this.lastBotSpeakingEndTime = 0;
     this.turnTakingManager?.setBotSpeaking(false);
   }
 
   /** Transition bot from speaking → not speaking, recording timestamp for echo guard. */
   private setBotNotSpeaking(): void {
-    this.isBotSpeaking = false;
+    this.isBotSpeaking = false; this.vadDetector?.setBotSpeaking(false);
     this.lastBotSpeakingEndTime = Date.now();
     this.turnTakingManager?.setBotSpeaking(false);
   }
@@ -1084,7 +1102,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
       // Activate echo guard during cached audio playback.
       // Without this, echo from silence-timeout prompts ("Jeste li jos tu?")
       // would be captured by SpeechBuffer and transcribed as customer speech.
-      this.isBotSpeaking = true;
+      this.isBotSpeaking = true; this.vadDetector?.setBotSpeaking(true);
       this.turnTakingManager?.setBotSpeaking(true);
 
       this.mediaSession.sendAudio(audio);
@@ -1216,7 +1234,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
     const pipeline = this.currentTTSPipeline;
 
     // Mark bot as speaking
-    this.isBotSpeaking = true;
+    this.isBotSpeaking = true; this.vadDetector?.setBotSpeaking(true);
     this.turnTakingManager?.setBotSpeaking(true);
 
     let llmResponse: LLMResponse | null = null;
@@ -1489,7 +1507,7 @@ export class CallOrchestrator extends EventEmitter<CallOrchestratorEvents> {
 
     // Release Deepgram client back to pool (or close if no pool)
     if (this.deepgramClient) {
-      if (this.deepgramPool) {
+      if (this.deepgramPool && ASR_PROVIDER !== "whisper") {
         this.deepgramPool.release(this.deepgramClient);
       } else {
         void this.deepgramClient.close();

@@ -47,6 +47,13 @@ voice.activi.io {
         reverse_proxy management-api:3001
     }
 
+    # RAG System API — all /api/rag/* routes
+    # Strip the /api/rag prefix so rag-system receives clean paths
+    handle /api/rag/* {
+        uri strip_prefix /api/rag
+        reverse_proxy rag-system:8000
+    }
+
     # RAG TEST (exact match)
     handle /api/rag-test {
         reverse_proxy rag-system:8000
@@ -70,6 +77,17 @@ voice.activi.io {
     # Structured access logging with rotation
     log {
         output file /var/log/caddy/access.log {
+            roll_size 50mb
+            roll_keep 5
+        }
+    }
+}
+
+n8n.activi.io {
+    reverse_proxy 172.18.0.9:5678
+    
+    log {
+        output file /var/log/caddy/n8n-access.log {
             roll_size 50mb
             roll_keep 5
         }
