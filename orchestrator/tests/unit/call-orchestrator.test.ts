@@ -22,6 +22,8 @@ const {
   mockCreateCallSession,
   mockGetNextPhase,
   mockCheckCallDuration,
+  mockWhisperTranscribe,
+  mockSpeechBufferStop,
 } = vi.hoisted(() => ({
   mockCreateCall: vi.fn().mockResolvedValue(undefined),
   mockUpdateCallResult: vi.fn().mockResolvedValue(undefined),
@@ -58,6 +60,8 @@ const {
   })),
   mockGetNextPhase: vi.fn().mockReturnValue('hook'),
   mockCheckCallDuration: vi.fn().mockReturnValue(false),
+  mockWhisperTranscribe: vi.fn().mockResolvedValue(''),
+  mockSpeechBufferStop: vi.fn().mockReturnValue(Buffer.alloc(3200)), // 100ms of audio
 }));
 
 // ---------------------------------------------------------------------------
@@ -93,6 +97,8 @@ vi.mock('../../src/config.js', () => ({
     ADAPTIVE_DELAY_MIN_MS: 200,
     ADAPTIVE_DELAY_MAX_MS: 800,
     TTS_CACHE_TTL_SECONDS: 86400,
+    GROQ_API_KEY: 'test-groq-key',
+    OPENAI_API_KEY: 'test-openai-key',
   },
 }));
 
@@ -203,6 +209,23 @@ vi.mock('../../src/deepgram/client.js', async () => {
     isConnected = vi.fn().mockReturnValue(true);
   }
   return { DeepgramASRClient: MockDeepgramASRClient };
+});
+
+vi.mock('../../src/asr/whisper-client.js', () => {
+  class MockWhisperClient {
+    transcribe = mockWhisperTranscribe;
+  }
+  return { WhisperClient: MockWhisperClient };
+});
+
+vi.mock('../../src/asr/speech-buffer.js', () => {
+  class MockSpeechBuffer {
+    startCapture = vi.fn();
+    stop = mockSpeechBufferStop;
+    clear = vi.fn();
+    isCapturing = false;
+  }
+  return { SpeechBuffer: MockSpeechBuffer };
 });
 
 vi.mock('../../src/metrics/prometheus.js', () => ({
@@ -547,6 +570,111 @@ describe('CallOrchestrator', () => {
     });
   });
 
+  describe('H2: Whisper ASR transcript pipeline', () => {
+    function getVadDetector(orchestrator: CallOrchestrator): EventEmitter {
+      return (orchestrator as unknown as { vadDetector: EventEmitter }).vadDetector;
+    }
+
+    function getTurnTakingManager(orchestrator: CallOrchestrator): { onTranscriptReceived: ReturnType<typeof vi.fn> } {
+      return (orchestrator as unknown as { turnTakingManager: { onTranscriptReceived: ReturnType<typeof vi.fn> } }).turnTakingManager;
+    }
+
+    it('passes non-empty Whisper transcript to TurnTakingManager on speechEnd', async () => {
+      mockWhisperTranscribe.mockResolvedValue('Zanima me posao u Njemackoj');
+      mockSpeechBufferStop.mockReturnValue(Buffer.alloc(3200)); // 100ms
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      const vad = getVadDetector(orchestrator);
+      const ttm = getTurnTakingManager(orchestrator);
+
+      vad.emit('speechEnd');
+      await Promise.resolve(); // flush microtask queue
+
+      expect(ttm.onTranscriptReceived).toHaveBeenCalledWith(true, 'Zanima me posao u Njemackoj');
+    });
+
+    it('skips empty Whisper transcript (silence/noise)', async () => {
+      mockWhisperTranscribe.mockResolvedValue('');
+      mockSpeechBufferStop.mockReturnValue(Buffer.alloc(3200));
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      const vad = getVadDetector(orchestrator);
+      const ttm = getTurnTakingManager(orchestrator);
+
+      vad.emit('speechEnd');
+      await Promise.resolve();
+
+      expect(ttm.onTranscriptReceived).not.toHaveBeenCalled();
+    });
+
+    it('skips audio shorter than 50ms (noise gate — < 1600 bytes)', async () => {
+      mockSpeechBufferStop.mockReturnValue(Buffer.alloc(1599)); // 49ms
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      const vad = getVadDetector(orchestrator);
+      const ttm = getTurnTakingManager(orchestrator);
+
+      vad.emit('speechEnd');
+      await Promise.resolve();
+
+      expect(mockWhisperTranscribe).not.toHaveBeenCalled();
+      expect(ttm.onTranscriptReceived).not.toHaveBeenCalled();
+    });
+
+    it('skips null buffer (nothing captured)', async () => {
+      mockSpeechBufferStop.mockReturnValue(null);
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      const vad = getVadDetector(orchestrator);
+      const ttm = getTurnTakingManager(orchestrator);
+
+      vad.emit('speechEnd');
+      await Promise.resolve();
+
+      expect(mockWhisperTranscribe).not.toHaveBeenCalled();
+      expect(ttm.onTranscriptReceived).not.toHaveBeenCalled();
+    });
+
+    it('discards stale barge-in result when activeTurnId changes before transcription completes', async () => {
+      let resolveTranscription!: (text: string) => void;
+      mockWhisperTranscribe.mockReturnValue(new Promise<string>((resolve) => { resolveTranscription = resolve; }));
+      mockSpeechBufferStop.mockReturnValue(Buffer.alloc(3200));
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      const vad = getVadDetector(orchestrator);
+      const ttm = getTurnTakingManager(orchestrator);
+
+      vad.emit('speechEnd');
+
+      // Simulate barge-in: change activeTurnId before transcription resolves
+      (orchestrator as unknown as { activeTurnId: string }).activeTurnId = 'different-turn';
+
+      resolveTranscription('Stale text');
+      await Promise.resolve();
+
+      expect(ttm.onTranscriptReceived).not.toHaveBeenCalled();
+    });
+
+    it('trims whitespace from transcript before passing to TurnTakingManager', async () => {
+      mockWhisperTranscribe.mockResolvedValue('  Zanima me  ');
+      mockSpeechBufferStop.mockReturnValue(Buffer.alloc(3200));
+      const { orchestrator } = createOrchestrator();
+      await orchestrator.start();
+
+      const vad = getVadDetector(orchestrator);
+      const ttm = getTurnTakingManager(orchestrator);
+
+      vad.emit('speechEnd');
+      await Promise.resolve();
+
+      expect(ttm.onTranscriptReceived).toHaveBeenCalledWith(true, 'Zanima me');
+    });
+  });
 
   describe('H4: rejection detection', () => {
     function triggerTurnWithScore(orchestrator: CallOrchestrator, score: number): void {
